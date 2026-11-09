@@ -275,7 +275,7 @@ function downloadDashboard(){
   const headings=["نوع السجل","الرقم","اسم الموضوع","المديرية المختصة","الموظف المسؤول","الحالة","تاريخ الوصول","تاريخ التحويل","الموعد النهائي","تفاصيل الموضوع","التوجيه","الملاحظات","آخر التحديثات","آخر تعديل","رابط السجل"];
   const cleanCell=value=>{
     let v=String(value??"");
-    if(/^\\s*[=+@-]/.test(v))v="'"+v;
+    if(/^[ \t\r\n]*[=+@-]/.test(v))v="'"+v;
     return '"'+v.replace(/"/g,'""')+'"';
   };
   const rows=records.map(r=>[r.kind==="mail"?"بريد إلكتروني":"موضوع مرسال",r.number,r.title,r.directorate,r.assignee,r.overdue?"متأخر":r.status,r.receivedRaw,r.transferred,r.due?r.due.toISOString().slice(0,10):"",r.details,r.direction,r.notes,r.updates,r.updatedAt?r.updatedAt.toISOString():"",r.issue.html_url]);
