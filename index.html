@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#123f37">
+  <title>شاشة المتابعة الخاصة بمكتب نائب الرئيس</title>
+  <meta name="description" content="شاشة متابعة المواضيع والمراسلات لمكتب نائب الرئيس">
+  <link rel="stylesheet" href="style.css">
+  <script defer src="app.js"></script>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="brand-symbol" aria-hidden="true">▦</div>
+      <div><strong>صندوق الحماية الاجتماعية</strong><small>مكتب نائب الرئيس</small></div>
+    </div>
+    <div class="side-separator"></div>
+    <div class="side-caption">مساحة المتابعة</div>
+    <nav aria-label="التنقل في شاشة المتابعة" class="side-nav">
+      <button class="nav-item active" data-view="overview" type="button"><span class="nav-ico">▦</span>نظرة عامة</button>
+      <button class="nav-item" data-view="topics" type="button"><span class="nav-ico">➤</span>مواضيع مرسال <span class="nav-count" id="nav-topics">—</span></button>
+      <button class="nav-item" data-view="overdue" type="button"><span class="nav-ico">◷</span>المواضيع المتأخرة <span class="nav-count" id="nav-overdue">—</span></button>
+      <button class="nav-item" data-view="mails" type="button"><span class="nav-ico">✉</span>البريد الإلكتروني <span class="nav-count" id="nav-mails">—</span></button>
+      <button class="nav-item" data-view="closed" type="button"><span class="nav-ico">✓</span>المواضيع المنجزة</button>
+    </nav>
+    <div class="side-footer"><span class="shield-ico">◇</span><div><strong>سجل موحّد للمكتب</strong><small>مواضيع مرسال · البريد الإلكتروني</small></div></div>
+  </aside>
+  <div class="main-column">
+    <header class="topbar">
+      <button id="menuToggle" class="icon-btn mobile-toggle" type="button" aria-label="إظهار القائمة">☰</button>
+      <div class="breadcrumbs"><span>مكتب نائب الرئيس</span><span class="crumb">‹</span><strong id="breadcrumbCurrent">نظرة عامة</strong></div>
+      <div class="top-actions"><span class="today" id="dateToday"></span><button type="button" id="syncButton" class="outline-btn">↻ <span>تحديث</span></button><button type="button" id="connectButton" class="outline-btn">◉ <span id="connectLabel">ربط الحساب</span></button></div>
+    </header>
+    <main class="content">
+      <section class="page-header">
+        <div><div class="eyebrow"><span class="gold-dot"></span> متابعة الأعمال والمراسلات</div><h1>شاشة المتابعة لمكتب نائب الرئيس</h1><p>كل موضوع، توجيهه ومسؤوله، في مكان واحد.</p></div>
+        <button id="addTopic" class="action-btn" type="button"><span>＋</span> إضافة موضوع</button>
+      </section>
+      <div id="connectionBanner" class="connection-banner" role="status"><strong>شاشة المتابعة جاهزة للربط</strong><span>البيانات محفوظة في مستودع GitHub الخاص. أدخل رمز الوصول لمشاهدة السجلات وتعديلها.</span><button id="bannerLogin" type="button">ربط GitHub</button></div>
+      <section id="overviewView" class="view-section">
+        <div class="stats-grid">
+          <button type="button" data-open-view="topics" class="stat-card green-stat"><div class="stat-heading"><div class="stat-icon">➤</div><span>مواضيع مرسال</span></div><strong class="stat-number" id="countTopics">—</strong><div class="stat-footer">جميع المواضيع المسجلة <span>↗</span></div></button>
+          <button type="button" data-open-view="overdue" class="stat-card pink-stat"><div class="stat-heading"><div class="stat-icon">◷</div><span>المواضيع المتأخرة</span></div><strong class="stat-number" id="countOverdue">—</strong><div class="stat-footer">تجاوزت 14 يوماً تقويمياً <span>↗</span></div></button>
+          <button type="button" data-open-view="mails" class="stat-card gold-stat"><div class="stat-heading"><div class="stat-icon">✉</div><span>مواضيع البريد الإلكتروني</span></div><strong class="stat-number" id="countMails">—</strong><div class="stat-footer">جميع رسائل المتابعة <span>↗</span></div></button>
+          <button type="button" data-open-view="closed" class="stat-card gray-stat"><div class="stat-heading"><div class="stat-icon">✓</div><span>المواضيع المنجزة</span></div><strong class="stat-number" id="countClosed">—</strong><div class="stat-footer">مواضيع مرسال المغلقة <span>↗</span></div></button>
+        </div>
+        <div class="sync-status"><span id="lastSync">لم تُحمّل البيانات بعد</span><span class="live-dot"></span> التحديثات المشتركة عبر GitHub</div>
+        <div class="split-grid">
+          <section class="surface"><div class="surface-heading"><div><h2><span class="heading-icon">▥</span> توزيع المواضيع حسب المديرية</h2><p>اضغط على المديرية لتصفية السجل</p></div><span class="micro-tag" id="dirCount">— مديريات</span></div><div id="directorateChart" class="directorate-chart"><p class="empty-note">سيظهر الرسم بعد تسجيل الدخول.</p></div></section>
+          <section class="surface"><div class="surface-heading"><div><h2><span class="heading-icon">◷</span> تحتاج إلى متابعة</h2><p>المواضيع المتأخرة والأقدم قيد الإجراء</p></div><span class="micro-tag alert-tag" id="priorityCount">—</span></div><div id="priorityList" class="priority-list"><p class="empty-note">تظهر المواضيع التي تحتاج متابعة هنا.</p></div></section>
+        </div>
+        <section class="surface recent-panel"><div class="surface-heading"><div><h2><span class="heading-icon">☷</span> أحدث المواضيع</h2><p>آخر المعاملات المسجلة وتحديثاتها</p></div><button type="button" class="text-btn" data-open-view="topics">عرض جميع المواضيع ←</button></div><div id="recentTopics" class="recent-list"><p class="empty-note">تظهر بيانات المواضيع بعد الربط.</p></div></section>
+      </section>
+      <section id="listView" class="view-section" hidden>
+        <div class="surface list-surface">
+          <div class="surface-heading list-heading"><div><h2 id="listTitle">مواضيع مرسال</h2><p id="listSubtitle">عرض وإدارة جميع المعاملات</p></div><button id="addMail" class="outline-btn" type="button" hidden>＋ إضافة بريد</button></div>
+          <div class="filters-row"><div class="search-wrap"><span>⌕</span><input id="searchField" type="search" placeholder="ابحث برقم أو عنوان الموضوع أو الملاحظات" aria-label="البحث عن موضوع"></div><select id="directorateFilter" aria-label="تصفية حسب المديرية"><option value="">جميع المديريات</option></select><select id="employeeFilter" aria-label="تصفية حسب الموظف"><option value="">جميع الموظفين</option><option>عبدالرحمن</option><option>محمد</option></select><select id="statusFilter" aria-label="تصفية حسب الحالة"><option value="">جميع الحالات</option><option>قيد الإجراء</option><option>انتظار مرئيات السيد</option><option>منتهي</option><option>متأخر</option></select></div>
+          <div class="results-count" id="resultsCount"></div>
+          <div class="table-scroll"><table><thead id="listHead"><tr><th>رقم الموضوع</th><th>اسم الموضوع</th><th>المديرية</th><th>المسؤول</th><th>الحالة</th><th>الموعد النهائي</th><th>الإجراء</th></tr></thead><tbody id="listBody"><tr><td colspan="7" class="empty-table">سجّل دخولك لعرض البيانات.</td></tr></tbody></table></div>
+        </div>
+      </section>
+      <footer class="footer">شاشة المتابعة الخاصة بمكتب نائب الرئيس <span>·</span> حفظ مشترك داخل المستودع الخاص</footer>
+    </main>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" hidden></div>
+<dialog id="loginDialog" class="modal login-modal">
+  <form id="loginForm">
+    <div class="modal-title-row"><div><div class="eyebrow">الدخول للمتابعة</div><h2>رمز الدخول الموحّد</h2></div><button type="button" class="close-btn" data-close-dialog="loginDialog" aria-label="إغلاق">×</button></div>
+    <p class="form-help">هذه الشاشة تتصل بمستودع GitHub خاص لحفظ المواضيع والتحديثات. إذا استخدمتم رمزاً واحداً، يجب أن يكون <strong>رمز GitHub مقيّد الصلاحية (Fine-grained token)</strong> لمستودع المتابعة فقط. لا تضعوا الرمز في كود الموقع أو ترسلوه عبر هذه المحادثة. سيظهر كل تعديل في GitHub باسم صاحب الرمز، وهذه المشاركة أقل أماناً من وجود رمز منفصل لكل موظف.</p>
+    <label class="field-label">رمز الدخول الموحّد (GitHub)<input id="githubToken" name="token" type="password" placeholder="github_pat_..." required autocomplete="off"></label>
+    <div id="authError" class="form-error" role="alert"></div>
+    <button class="action-btn full-btn" id="loginSubmit" type="submit">دخول وتحميل المواضيع</button>
+    <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer" class="form-link">إنشاء رمز مقيّد لمستودع المتابعة ←</a>
+  </form>
+</dialog>
+<dialog id="editorDialog" class="modal edit-modal">
+  <form id="editorForm">
+    <div class="modal-title-row"><div><div class="eyebrow">متابعة الأعمال والمراسلات</div><h2 id="editorTitle">إضافة موضوع</h2></div><button type="button" class="close-btn" data-close-dialog="editorDialog" aria-label="إغلاق">×</button></div>
+    <div id="editorFields" class="fields-grid"></div>
+    <div class="modal-actions"><button type="button" class="outline-btn" data-close-dialog="editorDialog">إلغاء</button><button type="submit" id="editorSubmit" class="action-btn">حفظ الموضوع</button></div>
+  </form>
+</dialog>
+<dialog id="detailDialog" class="modal detail-modal">
+  <div class="modal-title-row"><div><div class="eyebrow" id="detailRef">متابعة الموضوع</div><h2 id="detailTitle"></h2></div><button type="button" class="close-btn" data-close-dialog="detailDialog" aria-label="إغلاق">×</button></div>
+  <div id="detailMeta" class="detail-meta"></div><div id="detailBody" class="detail-body"></div>
+  <div class="detail-actions"><button type="button" id="editDetail" class="outline-btn">✎ تعديل البيانات</button><button type="button" id="toggleClose" class="outline-btn">✓ إنهاء الموضوع</button><a id="githubDetail" href="#" target="_blank" rel="noopener noreferrer">فتح الموضوع في GitHub ↗</a></div>
+  <div class="comments"><h3>آخر التحديثات والتعليقات</h3><div id="commentList" class="comment-list"></div><form id="commentForm"><label class="field-label">إضافة تحديث جديد<textarea id="commentText" rows="3" required placeholder="اكتب ما حدث في الموضوع…"></textarea></label><button type="submit" class="action-btn">حفظ التحديث للجميع</button></form></div>
+</dialog>
+</body></html>
