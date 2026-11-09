@@ -84,6 +84,8 @@ function changeView(next){
 function render(){
   $("connectionBanner").hidden=connected;
   $("connectLabel").textContent=connected?"الحساب متصل":"ربط الحساب";
+  $("connectButton").hidden=connected;
+  $("logoutButton").hidden=!connected;
   const t=topics(),m=mails(),late=t.filter(x=>x.overdue),done=t.filter(x=>x.status==="منتهي");
   const snapshots=connected?[t.length,m.length,late.length,done.length]:[116,6,0,88];
   for(const [id,val] of [["countTopics",snapshots[0]],["countMails",snapshots[1]],["countOverdue",snapshots[2]],["countClosed",snapshots[3]],["nav-topics",snapshots[0]],["nav-overdue",snapshots[2]],["nav-mails",snapshots[1]]])$(id).textContent=val.toLocaleString("ar-OM");
@@ -257,6 +259,33 @@ async function flipStatus(){
   try{await api("PATCH","/issues/"+detail.id,{state:next});$("detailDialog").close();await reload(true);toast("تم تغيير الحالة")}
   catch(e){toast("تعذر تغيير الحالة: "+e.message,true)}
 }
+function logoutDashboard(){
+  if(!connected)return;
+  if(!confirm("هل تريد تسجيل الخروج من شاشة المتابعة؟"))return;
+  auth="";connected=false;issues=[];records=[];lastSync=null;detail=null;
+  $("githubToken").value="";clearInterval(refreshTimer);refreshTimer=null;
+  for(const modal of document.querySelectorAll("dialog"))if(modal.open)modal.close();
+  render();
+  changeView("overview");
+  toast("تم تسجيل الخروج ومسح رمز الدخول من هذه الصفحة");
+}
+function downloadDashboard(){
+  if(!requireLogin())return;
+  if(!records.length){toast("لم يتم تحميل أي سجلات للتصدير",true);return}
+  const headings=["نوع السجل","الرقم","اسم الموضوع","المديرية المختصة","الموظف المسؤول","الحالة","تاريخ الوصول","تاريخ التحويل","الموعد النهائي","تفاصيل الموضوع","التوجيه","الملاحظات","آخر التحديثات","آخر تعديل","رابط السجل"];
+  const cleanCell=value=>{
+    let v=String(value??"");
+    if(/^\\s*[=+@-]/.test(v))v="'"+v;
+    return '"'+v.replace(/"/g,'""')+'"';
+  };
+  const rows=records.map(r=>[r.kind==="mail"?"بريد إلكتروني":"موضوع مرسال",r.number,r.title,r.directorate,r.assignee,r.overdue?"متأخر":r.status,r.receivedRaw,r.transferred,r.due?r.due.toISOString().slice(0,10):"",r.details,r.direction,r.notes,r.updates,r.updatedAt?r.updatedAt.toISOString():"",r.issue.html_url]);
+  const content="\uFEFF"+[headings,...rows].map(line=>line.map(cleanCell).join(",")).join("\r\n");
+  const blob=new Blob([content],{type:"text/csv;charset=utf-8"});
+  const url=URL.createObjectURL(blob);
+  const link=document.createElement("a");link.href=url;link.download="متابعة_مواضيع_مكتب_نائب_الرئيس_"+new Date().toISOString().slice(0,10)+".csv";
+  document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),3000);
+  toast("تم تجهيز ملف Excel-compatible CSV بجميع "+records.length+" السجلات");
+}
 function events(){
   document.querySelectorAll(".nav-item").forEach(el=>el.addEventListener("click",()=>changeView(el.dataset.view)));
   document.body.addEventListener("click",e=>{
@@ -266,12 +295,13 @@ function events(){
     const dismiss=e.target.closest("[data-close-dialog]");if(dismiss)$(dismiss.dataset.closeDialog).close();
   });
   $("menuToggle").onclick=()=>$("sidebar").classList.toggle("show");
-  $("connectButton").onclick=()=>{
-    if(!connected){$("loginDialog").showModal();return}
-    if(confirm("تسجيل الخروج من شاشة المتابعة؟")){
-      auth="";connected=false;issues=[];records=[];lastSync=null;detail=null;
-      $("githubToken").value="";clearInterval(refreshTimer);render();toast("تم تسجيل الخروج")
-    }
+  $("connectButton").onclick=()=>{if(!connected)$("loginDialog").showModal();else logoutDashboard()};
+  $("logoutButton").onclick=logoutDashboard;
+  $("downloadButton").onclick=downloadDashboard;
+  $("editContentButton").onclick=()=>{
+    if(!requireLogin())return;
+    changeView("topics");
+    toast("اختر الموضوع من القائمة واضغط «فتح وتحديث» ثم «تعديل البيانات»");
   };
   $("bannerLogin").onclick=()=>requireLogin();
   $("addTopic").onclick=()=>openEditor("topic");
