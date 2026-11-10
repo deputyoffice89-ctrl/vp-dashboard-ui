@@ -149,6 +149,10 @@ function renderOverview(){
   const all=t.filter(r=>r.status!=="منتهي").sort((a,b)=>Number(b.overdue)-Number(a.overdue)||(a.due?.getTime()||9999999999999)-(b.due?.getTime()||9999999999999)||a.id-b.id);
   $("priorityCount").textContent=t.filter(r=>r.overdue).length.toLocaleString("ar-OM")+" متأخرة";
   $("priorityList").innerHTML=connected?(all.length?all.slice(0,7).map(r=>'<button class="priority-item" type="button" data-open-id="'+r.id+'"><div class="priority-description"><strong>'+esc(r.title)+'</strong><small>'+esc(r.directorate||"مديرية غير محددة")+' · '+esc(r.assignee||"بدون مسؤول")+'</small></div><span class="priority-code">'+esc(r.number||"#"+r.id)+'</span>'+(r.overdue?'<span class="priority-badge">متأخر</span>':'')+'</button>').join(""):'<p class="empty-note">لا توجد مواضيع قيد الإجراء حالياً.</p>'):'<p class="empty-note">تظهر المواضيع التي تحتاج متابعة هنا.</p>';
+  const reminders=t.filter(r=>r.reminderDueNow).sort((a,b)=>a.nextReminder.localeCompare(b.nextReminder)||a.id-b.id);
+  $("reminderCount").textContent=connected?reminders.length.toLocaleString("ar-OM")+" مستحق":"—";
+  $("reminderItems").innerHTML=connected?(reminders.length?reminders.slice(0,9).map(r=>
+    '<button class="reminder-card" type="button" data-open-id="'+r.id+'"><span class="reminder-badge">حان موعد المتابعة</span><span class="reminder-title">'+esc(r.title)+'</span><span class="reminder-meta">'+esc(r.number||"#"+r.id)+' · '+esc(r.assignee||"غير محدد")+' · موعد: '+esc(r.nextReminder)+'</span></button>').join(""):'<p class="empty-note">لا توجد تذكيرات مستحقة حالياً. ستظهر المواضيع المفتوحة بعد 3 أيام عمل دون تحديث.</p>'):'<p class="empty-note">تظهر تذكيرات المتابعة بعد تسجيل الدخول.</p>';
   const recent=[...t].sort((a,b)=>b.updatedAt-a.updatedAt).slice(0,8);
   $("recentTopics").innerHTML=connected?(recent.length?recent.map(r=>'<button type="button" class="recent-item" data-open-id="'+r.id+'"><div class="recent-main"><strong>'+esc(r.title)+'</strong><small>'+esc(r.number||"#"+r.id)+' · '+esc(r.directorate||"غير محدد")+'</small></div>'+stat(r)+'</button>').join(""):'<p class="empty-note">لا توجد مواضيع.</p>'):'<p class="empty-note">تظهر المواضيع بعد ربط الحساب.</p>';
 }
@@ -156,24 +160,26 @@ function renderList(){
   let rows=view==="mails"?mails():topics();
   if(view==="overdue")rows=rows.filter(r=>r.overdue);
   if(view==="closed")rows=rows.filter(r=>r.status==="منتهي");
+  if(view==="reminders")rows=rows.filter(r=>r.reminderDueNow);
   const q=$("searchField").value.trim().toLowerCase(),dir=$("directorateFilter").value||filterDir,emp=$("employeeFilter").value,status=$("statusFilter").value;
   if(q)rows=rows.filter(r=>[r.number,r.title,r.details,r.notes,r.updates,r.assignee].join(" ").toLowerCase().includes(q));
   if(dir&&view!=="mails")rows=rows.filter(r=>(r.directorate||"غير محدد")===dir);
   if(emp)rows=rows.filter(r=>r.assignee===emp);
   if(status)rows=rows.filter(r=>status==="متأخر"?r.overdue:r.status===status);
-  rows.sort((a,b)=>Number(b.overdue)-Number(a.overdue)||b.updatedAt-a.updatedAt);
+  rows.sort((a,b)=>view==="reminders"?a.nextReminder.localeCompare(b.nextReminder):Number(b.overdue)-Number(a.overdue)||b.updatedAt-a.updatedAt);
   $("listTitle").textContent=VIEWS[view];
-  $("listSubtitle").textContent=view==="overdue"?"التي تجاوزت 14 يوماً من تاريخ وصولها":view==="closed"?"المواضيع المنتهية والمؤرشفة":view==="mails"?"متابعة المراسلات والإجراءات":"عرض وإدارة جميع المعاملات";
+  $("listSubtitle").textContent=view==="overdue"?"التي تجاوزت 14 يوماً من تاريخ وصولها":view==="closed"?"المواضيع المنتهية والمؤرشفة":view==="mails"?"متابعة المراسلات والإجراءات":view==="reminders"?"مواضيع حان موعد متابعتها بعد ثلاثة أيام عمل بدون الجمعة والسبت":"عرض وإدارة جميع المعاملات";
   $("addMail").hidden=view!=="mails";$("directorateFilter").hidden=view==="mails";
   $("resultsCount").textContent=connected?"عدد النتائج: "+rows.length.toLocaleString("ar-OM"):"سجّل دخولك لعرض البيانات";
   $("listHead").innerHTML=view==="mails"?
     '<tr><th>رقم الرسالة</th><th>موضوع الرسالة</th><th>الموظف المسؤول</th><th>الحالة</th><th>آخر تعديل</th><th>الإجراء</th></tr>':
-    '<tr><th>رقم الموضوع</th><th>اسم الموضوع</th><th>المديرية</th><th>المسؤول</th><th>الحالة</th><th>الموعد النهائي</th><th>الإجراء</th></tr>';
-  $("listBody").innerHTML=!connected?'<tr><td colspan="7" class="empty-table">سجّل دخولك لعرض البيانات.</td></tr>':
-    !rows.length?'<tr><td colspan="7" class="empty-table">لا توجد نتائج مطابقة.</td></tr>':
+    '<tr><th>رقم الموضوع</th><th>اسم الموضوع</th><th>المديرية</th><th>المسؤول</th><th>الحالة</th><th>عدد الأيام</th><th>تذكير المتابعة</th><th>الموعد النهائي</th><th>الإجراء</th></tr>';
+  const colCount=view==="mails"?6:9;
+  $("listBody").innerHTML=!connected?'<tr><td colspan="'+colCount+'" class="empty-table">سجّل دخولك لعرض البيانات.</td></tr>':
+    !rows.length?'<tr><td colspan="'+colCount+'" class="empty-table">لا توجد نتائج مطابقة.</td></tr>':
     rows.map(r=>view==="mails"?
       '<tr><td>'+esc(r.number||"—")+'</td><td><span class="row-title">'+esc(r.title)+'</span></td><td>'+esc(r.assignee||"—")+'</td><td>'+stat(r)+'</td><td>'+fmDate(r.updatedAt)+'</td><td><button class="row-action" type="button" data-open-id="'+r.id+'">فتح وتحديث</button></td></tr>':
-      '<tr><td>'+esc(r.number||"—")+'</td><td><span class="row-title">'+esc(r.title)+'</span></td><td>'+esc(r.directorate||"—")+'</td><td>'+esc(r.assignee||"—")+'</td><td>'+stat(r)+'</td><td>'+fmDate(r.due)+'</td><td><button class="row-action" type="button" data-open-id="'+r.id+'">فتح وتحديث</button></td></tr>').join("");
+      '<tr><td>'+esc(r.number||"—")+'</td><td><span class="row-title">'+esc(r.title)+'</span></td><td>'+esc(r.directorate||"—")+'</td><td>'+esc(r.assignee||"—")+'</td><td>'+stat(r)+'</td><td>'+ageNum(r)+'</td><td>'+reminderTag(r)+'</td><td>'+fmDate(r.due)+'</td><td><button class="row-action" type="button" data-open-id="'+r.id+'">فتح وتحديث</button></td></tr>').join("");
 }
 function requireLogin(){if(connected)return true;$("loginDialog").showModal();return false}
 function formField(f,value){
