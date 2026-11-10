@@ -358,19 +358,42 @@ function logoutDashboard(){
 function downloadDashboard(){
   if(!requireLogin())return;
   if(!records.length){toast("لم يتم تحميل أي سجلات للتصدير",true);return}
-  const headings=["نوع السجل","الرقم","اسم الموضوع","المديرية المختصة","الموظف المسؤول","الحالة","عدد الأيام","موعد تذكير المتابعة","تاريخ الوصول","تاريخ التحويل","الموعد النهائي","تفاصيل الموضوع","التوجيه","الملاحظات","آخر التحديثات","آخر تعديل","رابط السجل"];
-  const cleanCell=value=>{
-    let v=String(value??"");
-    if(/^[ \t\r\n]*[=+@-]/.test(v))v="'"+v;
-    return '"'+v.replace(/"/g,'""')+'"';
-  };
-  const rows=records.map(r=>[r.kind==="mail"?"بريد إلكتروني":"موضوع مرسال",r.number,r.title,r.directorate,r.assignee,r.overdue?"متأخر":r.status,r.ageDays===null?"":r.ageDays,r.kind==="topic"&&r.status!=="منتهي"?r.nextReminder:"",r.receivedRaw,r.transferred,r.due?r.due.toISOString().slice(0,10):"",r.details,r.direction,r.notes,r.updates,r.updatedAt?r.updatedAt.toISOString():"",r.issue.html_url]);
-  const content="\uFEFF"+[headings,...rows].map(line=>line.map(cleanCell).join(",")).join("\r\n");
-  const blob=new Blob([content],{type:"text/csv;charset=utf-8"});
-  const url=URL.createObjectURL(blob);
-  const link=document.createElement("a");link.href=url;link.download="متابعة_مواضيع_مكتب_نائب_الرئيس_"+new Date().toISOString().slice(0,10)+".csv";
-  document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),3000);
-  toast("تم تجهيز ملف Excel-compatible CSV بجميع "+records.length+" السجلات");
+  if(!window.OfficeXLSX||typeof window.OfficeXLSX.createWorkbook!=="function"){
+    toast("تعذر تحميل مكتبة Excel المحلية. حدّث الصفحة وجرب مرة ثانية.",true);
+    return;
+  }
+  try{
+    const headings=["نوع السجل","الرقم","اسم الموضوع","المديرية المختصة","الموظف المسؤول","الحالة","عدد الأيام","موعد تذكير المتابعة","تاريخ الوصول","تاريخ التحويل","الموعد النهائي","تفاصيل الموضوع","التوجيه","الملاحظات","آخر التحديثات","آخر تعديل","رابط السجل"];
+    const toRow=r=>[
+      r.kind==="mail"?"بريد إلكتروني":"موضوع مرسال",
+      r.number,r.title,r.directorate,r.assignee,r.overdue?"متأخر":r.status,
+      r.ageDays===null?"":r.ageDays,
+      r.kind==="topic"&&r.status!=="منتهي"?r.nextReminder:"",
+      r.receivedRaw,r.transferred,r.due?r.due.toISOString().slice(0,10):"",
+      r.details,r.direction,r.notes,r.updates,
+      r.updatedAt?r.updatedAt.toISOString():"",
+      r.issue.html_url
+    ];
+    const topics=records.filter(r=>r.kind==="topic");
+    const mails=records.filter(r=>r.kind==="mail");
+    const reminders=topics.filter(r=>r.reminderDueNow);
+    const workbook=window.OfficeXLSX.createWorkbook([
+      {name:"مواضيع مرسال",headers:headings,rows:topics.map(toRow)},
+      {name:"البريد الإلكتروني",headers:headings,rows:mails.map(toRow)},
+      {name:"تذكيرات المتابعة",headers:headings,rows:reminders.map(toRow)}
+    ]);
+    const url=URL.createObjectURL(workbook);
+    const link=document.createElement("a");
+    link.href=url;
+    link.download="متابعة_مواضيع_مكتب_نائب_الرئيس_"+omanISO()+".xlsx";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),3000);
+    toast("تم تجهيز ملف Excel بصيغة XLSX ويضم "+records.length+" سجلاً في 3 صفحات");
+  }catch(error){
+    toast("تعذر إنشاء ملف Excel: "+error.message,true);
+  }
 }
 function events(){
   document.querySelectorAll(".nav-item").forEach(el=>el.addEventListener("click",()=>changeView(el.dataset.view)));
