@@ -18,3 +18,20 @@
 .logout-btn:hover{background:#fff4f4;border-color:#dab8b8}
 @media(max-width:1200px){.top-actions{gap:7px}.top-actions .outline-btn{font-size:13px;padding:9px 11px;min-height:40px}.today{display:none}}
 @media(max-width:750px){.topbar{height:auto;min-height:92px;flex-wrap:wrap;gap:8px;padding-top:10px;padding-bottom:10px}.top-actions{width:100%;justify-content:stretch}.top-actions .outline-btn{flex:1 1 auto;font-size:12px;padding:9px 8px}}
+
+/* Three-working-day follow-up reminders and numeric subject age */
+.reminder-panel{margin-top:25px;border-top:3px solid #b79957}
+.reminder-count{border:0;cursor:pointer;background:#fff0de;color:#9c672c;font-family:inherit;font-weight:800}
+.reminder-items{display:grid;grid-template-columns:repeat(auto-fit,minmax(235px,1fr));gap:12px;margin-top:22px}
+.reminder-card{text-align:right;border:1px solid #f0dfca;border-right:4px solid #b9904b;border-radius:12px;background:#fffbf4;padding:16px;cursor:pointer;color:#3e5a4d;display:flex;flex-direction:column;gap:9px;min-width:0}
+.reminder-card:hover{background:#fdf5e6}
+.reminder-card .reminder-title{font-weight:800;font-size:14px;line-height:1.55;overflow-wrap:anywhere}
+.reminder-card .reminder-meta{color:#8f8068;font-size:12px}
+.reminder-card .reminder-badge{color:#a35444;background:#fff1df;padding:5px 10px;align-self:flex-start;border-radius:8px;font-size:12px;font-weight:700}
+.reminder-pill{display:inline-block;color:#79572c;background:#fff1dc;padding:6px 9px;border-radius:8px;font-size:12px;white-space:nowrap}
+.reminder-pill.due{background:#ffe9e7;color:#a94b49;font-weight:800}
+.age-num{display:inline-block;min-width:28px;text-align:center;font-weight:800;font-size:16px;color:#1b7051;direction:ltr;font-variant-numeric:tabular-nums}
+.age-empty{color:#a1aaa0}
+.age-note{font-size:13px;color:#708a7a;line-height:1.75;margin:10px 2px 15px}
+#markFollowup{font-size:13px;padding:10px 12px}
+@media(max-width:750px){.reminder-items{grid-template-columns:1fr}.reminder-panel{margin-top:18px}.age-note{font-size:12px}}
