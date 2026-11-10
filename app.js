@@ -231,6 +231,7 @@ function bodyFor(v,kind,record){
     lines.push(boldLine("رقم الموضوع",v.number),boldLine("اسم الموضوع",v.title),
       boldLine("الحالة",v.status),boldLine("تاريخ الوصول",v.receivedRaw),boldLine("تاريخ التحويل",v.transferred),
       boldLine("المديرية المختصة",v.directorate),boldLine("الموظف المسؤول",v.assignee),
+      ...(record?.followupStamp?[boldLine("تاريخ آخر متابعة",record.followupStamp)]:[]),
       "","### تفاصيل الموضوع",v.details||"—","","### التوجيه",v.direction||"—",
       "","### الملاحظات",v.notes||"—","","### آخر التحديثات",v.updates||"—");
   }else{
@@ -263,7 +264,8 @@ async function openDetail(id){
   const r=records.find(x=>x.id===Number(id));if(!r)return;detail=r;
   $("detailRef").textContent=(r.kind==="mail"?"رسالة بريد":"موضوع")+" #"+r.id;
   $("detailTitle").textContent=r.title;
-  $("detailMeta").innerHTML=[["الرقم",r.number||"—"],["المديرية",r.directorate||"—"],["المسؤول",r.assignee||"—"],["الحالة",r.overdue?"متأخر":r.status],["الموعد النهائي",fmDate(r.due)]].map(([k,v])=>'<span class="detail-chip">'+esc(k)+": "+esc(v)+'</span>').join("");
+  $("markFollowup").hidden=r.kind!=="topic"||r.status==="منتهي";
+  $("detailMeta").innerHTML=[["الرقم",r.number||"—"],["المديرية",r.directorate||"—"],["المسؤول",r.assignee||"—"],["الحالة",r.overdue?"متأخر":r.status],["عدد الأيام",r.ageDays===null?"—":String(r.ageDays)],["موعد تذكير المتابعة",r.kind==="mail"||r.status==="منتهي"?"—":r.nextReminder],["الموعد النهائي",fmDate(r.due)]].map(([k,v])=>'<span class="detail-chip">'+esc(k)+": "+esc(v)+'</span>').join("");
   const sections=r.kind==="mail"?[["تفاصيل الرسالة",r.details],["الملاحظات",r.notes],["آخر التحديثات",r.updates]]:[["تفاصيل الموضوع",r.details],["التوجيه",r.direction],["الملاحظات",r.notes],["آخر التحديثات",r.updates]];
   $("detailBody").innerHTML=sections.map(([k,v])=>"<h3>"+esc(k)+"</h3><p>"+esc(v||"—")+"</p>").join("");
   $("toggleClose").textContent=r.status==="منتهي"?"↺ إعادة الموضوع للمتابعة":"✓ إنهاء الموضوع";
@@ -286,12 +288,42 @@ async function loadComments(id){
     }
   }catch(e){$("commentList").textContent="تعذر تحميل التعليقات: "+e.message}
 }
+async function setFollowupDate(id){
+  const issue=await api("GET","/issues/"+id);
+  const stamp=omanISO();
+  const oldBody=String(issue.body||"");
+  const pattern=/^\*\*تاريخ آخر متابعة\*\*:[^\r\n]*/m;
+  const newBody=pattern.test(oldBody)?oldBody.replace(pattern,"**تاريخ آخر متابعة**: "+stamp):"**تاريخ آخر متابعة**: "+stamp+"\n\n"+oldBody;
+  await api("PATCH","/issues/"+id,{body:newBody});
+  return stamp;
+}
+async function markFollowupToday(){
+  if(!detail||detail.kind!=="topic"||detail.status==="منتهي")return;
+  const btn=$("markFollowup");btn.disabled=true;
+  try{
+    await setFollowupDate(detail.id);
+    $("detailDialog").close();
+    await reload(true);
+    toast("تم تسجيل المتابعة، والتذكير القادم بعد 3 أيام عمل دون الجمعة والسبت");
+  }catch(error){toast("تعذر تسجيل المتابعة: "+error.message,true)}
+  finally{btn.disabled=false}
+}
+
 async function saveComment(e){
   e.preventDefault();if(!detail)return;
   const content=$("commentText").value.trim(),id=detail.id;
   if(!content)return;
   const btn=e.target.querySelector("button[type=submit]");btn.disabled=true;
-  try{await api("POST","/issues/"+id+"/comments",{body:content});$("commentText").value="";await loadComments(id);await reload(true);toast("تم حفظ التحديث للجميع")}
+  try{
+    await api("POST","/issues/"+id+"/comments",{body:content});
+    $("commentText").value="";
+    let followupOk=true;
+    if(detail.kind==="topic"){
+      try{await setFollowupDate(id)}catch(error){followupOk=false;toast("حُفظ التعليق، لكن لم يتم تحديث موعد التذكير: "+error.message,true)}
+    }
+    await loadComments(id);await reload(true);
+    if(followupOk)toast("تم حفظ التحديث، والتذكير القادم بعد 3 أيام عمل");
+  }
   catch(err){toast("تعذر حفظ التحديث: "+err.message,true)}
   finally{btn.disabled=false}
 }
@@ -315,13 +347,13 @@ function logoutDashboard(){
 function downloadDashboard(){
   if(!requireLogin())return;
   if(!records.length){toast("لم يتم تحميل أي سجلات للتصدير",true);return}
-  const headings=["نوع السجل","الرقم","اسم الموضوع","المديرية المختصة","الموظف المسؤول","الحالة","تاريخ الوصول","تاريخ التحويل","الموعد النهائي","تفاصيل الموضوع","التوجيه","الملاحظات","آخر التحديثات","آخر تعديل","رابط السجل"];
+  const headings=["نوع السجل","الرقم","اسم الموضوع","المديرية المختصة","الموظف المسؤول","الحالة","عدد الأيام","موعد تذكير المتابعة","تاريخ الوصول","تاريخ التحويل","الموعد النهائي","تفاصيل الموضوع","التوجيه","الملاحظات","آخر التحديثات","آخر تعديل","رابط السجل"];
   const cleanCell=value=>{
     let v=String(value??"");
     if(/^[ \t\r\n]*[=+@-]/.test(v))v="'"+v;
     return '"'+v.replace(/"/g,'""')+'"';
   };
-  const rows=records.map(r=>[r.kind==="mail"?"بريد إلكتروني":"موضوع مرسال",r.number,r.title,r.directorate,r.assignee,r.overdue?"متأخر":r.status,r.receivedRaw,r.transferred,r.due?r.due.toISOString().slice(0,10):"",r.details,r.direction,r.notes,r.updates,r.updatedAt?r.updatedAt.toISOString():"",r.issue.html_url]);
+  const rows=records.map(r=>[r.kind==="mail"?"بريد إلكتروني":"موضوع مرسال",r.number,r.title,r.directorate,r.assignee,r.overdue?"متأخر":r.status,r.ageDays===null?"":r.ageDays,r.kind==="topic"&&r.status!=="منتهي"?r.nextReminder:"",r.receivedRaw,r.transferred,r.due?r.due.toISOString().slice(0,10):"",r.details,r.direction,r.notes,r.updates,r.updatedAt?r.updatedAt.toISOString():"",r.issue.html_url]);
   const content="\uFEFF"+[headings,...rows].map(line=>line.map(cleanCell).join(",")).join("\r\n");
   const blob=new Blob([content],{type:"text/csv;charset=utf-8"});
   const url=URL.createObjectURL(blob);
@@ -368,6 +400,7 @@ function events(){
   $("editorForm").onsubmit=saveEditor;
   $("commentForm").onsubmit=saveComment;
   $("toggleClose").onclick=flipStatus;
+  $("markFollowup").onclick=markFollowupToday;
   $("editDetail").onclick=()=>{const r=detail;$("detailDialog").close();openEditor(r.kind,r)};
   ["searchField","directorateFilter","employeeFilter","statusFilter"].forEach(id=>{
     $(id).addEventListener(id==="searchField"?"input":"change",()=>{
