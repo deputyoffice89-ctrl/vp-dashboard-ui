@@ -4,7 +4,7 @@
 "use strict";
 const OWNER="deputyoffice89-ctrl",REPO="vp-office-dashboard",API="https://api.github.com/repos/"+OWNER+"/"+REPO;
 const DIRS=["الاشتراكات","المستحقات","إصابات العمل","خدمات المتعاملين","مكتب الدكتور"];
-const VIEWS={overview:"نظرة عامة",topics:"مواضيع مرسال",overdue:"المواضيع المتأخرة",mails:"البريد الإلكتروني",closed:"المواضيع المنجزة",reminders:"تذكيرات المتابعة"};
+const VIEWS={overview:"نظرة عامة",topics:"مواضيع مرسال",overdue:"المواضيع المتأخرة",mails:"البريد الإلكتروني",closed:"المواضيع المنجزة",reminders:"تذكيرات المتابعة",abdulrahman:"مواضيع عبدالرحمن",mohammad:"مواضيع محمد"};
 const $=id=>document.getElementById(id);
 let auth="",connected=false,issues=[],records=[],view="overview",editing=null,editorKind="topic",detail=null,lastSync=null,loading=false,filterDir="",refreshTimer=null;
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -115,6 +115,7 @@ function changeView(next){
   document.querySelectorAll(".nav-item").forEach(el=>el.classList.toggle("active",el.dataset.view===next));
   $("overviewView").hidden=next!=="overview";$("listView").hidden=next==="overview";
   $("sidebar").classList.remove("show");$("searchField").value="";$("statusFilter").value="";
+  $("employeeFilter").value=next==="abdulrahman"?"عبدالرحمن":next==="mohammad"?"محمد":"";
   if(next!=="topics")filterDir="";
   if(next==="overview")renderOverview();else renderList();
 }
@@ -125,7 +126,7 @@ function render(){
   $("logoutButton").hidden=!connected;
   const t=topics(),m=mails(),late=t.filter(x=>x.overdue),done=t.filter(x=>x.status==="منتهي");
   const snapshots=connected?[t.length,m.length,late.length,done.length]:[null,null,null,null];
-  for(const [id,val] of [["countTopics",snapshots[0]],["countMails",snapshots[1]],["countOverdue",snapshots[2]],["countClosed",snapshots[3]],["nav-topics",snapshots[0]],["nav-overdue",snapshots[2]],["nav-mails",snapshots[1]],["nav-reminders",t.filter(x=>x.reminderDueNow).length]])$(id).textContent=connected?val.toLocaleString("ar-OM"):"—";
+  for(const [id,val] of [["countTopics",snapshots[0]],["countMails",snapshots[1]],["countOverdue",snapshots[2]],["countClosed",snapshots[3]],["nav-topics",snapshots[0]],["nav-overdue",snapshots[2]],["nav-mails",snapshots[1]],["nav-reminders",t.filter(x=>x.reminderDueNow).length],["nav-abdulrahman",t.filter(x=>(x.assignee||"").trim()==="عبدالرحمن").length],["nav-mohammad",t.filter(x=>(x.assignee||"").trim()==="محمد").length]])$(id).textContent=connected?val.toLocaleString("ar-OM"):"—";
   $("lastSync").textContent=lastSync?"آخر مزامنة "+fmTime(lastSync)+" · تحديث تلقائي كل دقيقة":"لم تُحمّل البيانات بعد";
   $("dateToday").textContent=fmDate(new Date());
   const selected=$("directorateFilter").value;
@@ -161,6 +162,8 @@ function renderList(){
   if(view==="overdue")rows=rows.filter(r=>r.overdue);
   if(view==="closed")rows=rows.filter(r=>r.status==="منتهي");
   if(view==="reminders")rows=rows.filter(r=>r.reminderDueNow);
+  if(view==="abdulrahman")rows=rows.filter(r=>(r.assignee||"").trim()==="عبدالرحمن");
+  if(view==="mohammad")rows=rows.filter(r=>(r.assignee||"").trim()==="محمد");
   const q=$("searchField").value.trim().toLowerCase(),dir=$("directorateFilter").value||filterDir,emp=$("employeeFilter").value,status=$("statusFilter").value;
   if(q)rows=rows.filter(r=>[r.number,r.title,r.details,r.notes,r.updates,r.assignee].join(" ").toLowerCase().includes(q));
   if(dir&&view!=="mails")rows=rows.filter(r=>(r.directorate||"غير محدد")===dir);
@@ -168,8 +171,9 @@ function renderList(){
   if(status)rows=rows.filter(r=>status==="متأخر"?r.overdue:r.status===status);
   rows.sort((a,b)=>view==="reminders"?a.nextReminder.localeCompare(b.nextReminder):Number(b.overdue)-Number(a.overdue)||b.updatedAt-a.updatedAt);
   $("listTitle").textContent=VIEWS[view];
-  $("listSubtitle").textContent=view==="overdue"?"التي تجاوزت 14 يوماً من تاريخ وصولها":view==="closed"?"المواضيع المنتهية والمؤرشفة":view==="mails"?"متابعة المراسلات والإجراءات":view==="reminders"?"مواضيع حان موعد متابعتها بعد ثلاثة أيام عمل بدون الجمعة والسبت":"عرض وإدارة جميع المعاملات";
+  $("listSubtitle").textContent=view==="overdue"?"التي تجاوزت 14 يوماً من تاريخ وصولها":view==="closed"?"المواضيع المنتهية والمؤرشفة":view==="mails"?"متابعة المراسلات والإجراءات":view==="reminders"?"مواضيع حان موعد متابعتها بعد ثلاثة أيام عمل بدون الجمعة والسبت":view==="abdulrahman"?"مواضيع مرسال المسندة إلى عبدالرحمن فقط":view==="mohammad"?"مواضيع مرسال المسندة إلى محمد فقط":"عرض وإدارة جميع المعاملات";
   $("addMail").hidden=view!=="mails";$("directorateFilter").hidden=view==="mails";
+  $("employeeFilter").hidden=view==="abdulrahman"||view==="mohammad";
   $("resultsCount").textContent=connected?"عدد النتائج: "+rows.length.toLocaleString("ar-OM"):"سجّل دخولك لعرض البيانات";
   $("listHead").innerHTML=view==="mails"?
     '<tr><th>رقم الرسالة</th><th>موضوع الرسالة</th><th>الموظف المسؤول</th><th>الحالة</th><th>آخر تعديل</th><th>الإجراء</th></tr>':
