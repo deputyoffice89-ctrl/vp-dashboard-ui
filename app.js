@@ -114,9 +114,13 @@ function changeView(next){
   $("breadcrumbCurrent").textContent=VIEWS[next];
   document.querySelectorAll(".nav-item").forEach(el=>el.classList.toggle("active",el.dataset.view===next));
   $("overviewView").hidden=next!=="overview";$("listView").hidden=next==="overview";
-  $("sidebar").classList.remove("show");$("searchField").value="";$("statusFilter").value="";
-  $("employeeFilter").value=next==="abdulrahman"?"عبدالرحمن":next==="mohammad"?"محمد":"";
-  if(next!=="topics")filterDir="";
+  $("sidebar").classList.remove("show");
+  // A fresh page must not inherit a hidden department or employee filter.
+  $("searchField").value="";
+  $("statusFilter").value="";
+  $("directorateFilter").value="";
+  $("employeeFilter").value="";
+  filterDir="";
   if(next==="overview")renderOverview();else renderList();
 }
 function render(){
@@ -162,9 +166,12 @@ function renderList(){
   if(view==="overdue")rows=rows.filter(r=>r.overdue);
   if(view==="closed")rows=rows.filter(r=>r.status==="منتهي");
   if(view==="reminders")rows=rows.filter(r=>r.reminderDueNow);
-  if(view==="abdulrahman")rows=rows.filter(r=>(r.assignee||"").trim()==="عبدالرحمن");
-  if(view==="mohammad")rows=rows.filter(r=>(r.assignee||"").trim()==="محمد");
-  const q=$("searchField").value.trim().toLowerCase(),dir=$("directorateFilter").value||filterDir,emp=$("employeeFilter").value,status=$("statusFilter").value;
+  const staffPage=view==="abdulrahman"||view==="mohammad";
+  const staffName=view==="abdulrahman"?"عبدالرحمن":view==="mohammad"?"محمد":"";
+  // Staff navigation uses the assignee saved in each private issue, not the
+  // employee select, which is hidden on these two pages.
+  if(staffPage)rows=rows.filter(r=>String(r.assignee||"").normalize("NFKC").replace(/[\u200b-\u200f\ufeff]/g,"").trim()===staffName);
+  const q=$("searchField").value.trim().toLowerCase(),dir=$("directorateFilter").value||filterDir,emp=staffPage?"":$("employeeFilter").value,status=$("statusFilter").value;
   if(q)rows=rows.filter(r=>[r.number,r.title,r.details,r.notes,r.updates,r.assignee].join(" ").toLowerCase().includes(q));
   if(dir&&view!=="mails")rows=rows.filter(r=>(r.directorate||"غير محدد")===dir);
   if(emp)rows=rows.filter(r=>r.assignee===emp);
