@@ -35,3 +35,11 @@
 .age-note{font-size:13px;color:#708a7a;line-height:1.75;margin:10px 2px 15px}
 #markFollowup{font-size:13px;padding:10px 12px}
 @media(max-width:750px){.reminder-items{grid-template-columns:1fr}.reminder-panel{margin-top:18px}.age-note{font-size:12px}}
+
+/* Dedicated staff sections on the green RTL sidebar */
+.sidebar{overflow-y:auto;scrollbar-width:thin;scrollbar-color:#42796b transparent}
+.staff-nav-title{font-size:12px;color:#b5d4be;font-weight:700;padding:12px 15px 3px;border-top:1px solid #ffffff24;margin-top:8px}
+.side-nav .staff-nav-item{min-height:48px;padding:10px 16px 10px 12px;margin-right:8px;width:calc(100% - 8px);font-size:15px;background:#ffffff08}
+.side-nav .staff-nav-item .nav-ico{font-size:14px;color:#c9b47c}
+.side-nav .staff-nav-item.active{background:#ffffff24}
+@media(max-width:750px){.sidebar{overflow-y:auto}.side-nav .staff-nav-item{min-height:43px}}
