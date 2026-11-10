@@ -4,7 +4,7 @@
 "use strict";
 const OWNER="deputyoffice89-ctrl",REPO="vp-office-dashboard",API="https://api.github.com/repos/"+OWNER+"/"+REPO;
 const DIRS=["الاشتراكات","المستحقات","إصابات العمل","خدمات المتعاملين","مكتب الدكتور"];
-const VIEWS={overview:"نظرة عامة",topics:"مواضيع مرسال",overdue:"المواضيع المتأخرة",mails:"البريد الإلكتروني",closed:"المواضيع المنجزة"};
+const VIEWS={overview:"نظرة عامة",topics:"مواضيع مرسال",overdue:"المواضيع المتأخرة",mails:"البريد الإلكتروني",closed:"المواضيع المنجزة",reminders:"تذكيرات المتابعة"};
 const $=id=>document.getElementById(id);
 let auth="",connected=false,issues=[],records=[],view="overview",editing=null,editorKind="topic",detail=null,lastSync=null,loading=false,filterDir="",refreshTimer=null;
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -14,6 +14,36 @@ const fmTime=d=>new Intl.DateTimeFormat("ar-OM",{hour:"2-digit",minute:"2-digit"
 const today=()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth(),d.getDate())};
 const add14=d=>{if(!d)return null;const x=new Date(d);x.setDate(x.getDate()+14);return x};
 const iso=s=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(s||""))return null;const [y,m,d]=s.split("-").map(Number),v=new Date(y,m-1,d);return v.getFullYear()===y&&v.getMonth()===m-1&&v.getDate()===d?v:null};
+
+/* Working week in Oman: Sunday through Thursday. All dates use Asia/Muscat. */
+function omanISO(date=new Date()){
+  const parts=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Muscat",day:"2-digit",month:"2-digit",year:"numeric"}).formatToParts(date);
+  const val=type=>parts.find(p=>p.type===type)?.value;
+  return val("year")+"-"+val("month")+"-"+val("day");
+}
+function dayUTC(day){return Date.parse(day+"T00:00:00Z")}
+function validDay(day){return /^\d{4}-\d{2}-\d{2}$/.test(day||"")&&Number.isFinite(dayUTC(day))&&new Date(dayUTC(day)).toISOString().slice(0,10)===day}
+function calendarAge(day){if(!validDay(day))return null;return Math.max(0,Math.round((dayUTC(omanISO())-dayUTC(day))/86400000))}
+function isWorkingDay(day){const weekday=new Date(dayUTC(day)).getUTCDay();return weekday!==5&&weekday!==6}
+function afterWorkDays(day,count){
+  if(!validDay(day))return "";
+  let current=dayUTC(day),remaining=count;
+  while(remaining>0){current+=86400000;const date=new Date(current).toISOString().slice(0,10);if(isWorkingDay(date))remaining--}
+  return new Date(current).toISOString().slice(0,10);
+}
+function workingDaysBetween(start,end){
+  if(!validDay(start)||!validDay(end)||end<=start)return 0;
+  let current=dayUTC(start),count=0;
+  while(current<dayUTC(end)){current+=86400000;const date=new Date(current).toISOString().slice(0,10);if(isWorkingDay(date))count++}
+  return count;
+}
+function reminderTag(r){
+  if(r.status==="منتهي"||r.kind!=="topic")return '<span class="age-empty">—</span>';
+  if(r.reminderDueNow)return '<span class="reminder-pill due">تذكير مستحق</span>';
+  return '<span class="reminder-pill">بعد '+workingDaysBetween(omanISO(),r.nextReminder)+' يوم عمل</span>';
+}
+function ageNum(r){return r.ageDays===null?'<span class="age-empty" title="تاريخ الوصول غير محدد">—</span>':'<span class="age-num">'+r.ageDays+'</span>'}
+
 let noticeTimer;
 function toast(message,bad=false){const n=$("toast");n.textContent=message;n.style.background=bad?"#913f55":"#194d40";n.hidden=false;clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>n.hidden=true,4400)}
 function field(body,name){
@@ -37,12 +67,19 @@ function decode(issue){
   const waiting=rawStatus.includes("انتظار مرئيات السيد")||rawStatus.includes("بانتظار");
   const status=issue.state==="closed"?"منتهي":waiting?"انتظار مرئيات السيد":"قيد الإجراء";
   const receivedRaw=get(body,["تاريخ الوصول","تاريخ وصول الموضوع"]),received=iso(receivedRaw),due=add14(received);
+  const followupStamp=get(body,["تاريخ آخر متابعة"]);
+  const updateDay=omanISO(new Date(issue.updated_at||issue.created_at));
+  const followupBase=validDay(followupStamp)&&followupStamp>updateDay?followupStamp:updateDay;
+  const nextReminder=afterWorkDays(followupBase,3);
+  const reminderDueNow=issue.state!=="closed"&&nextReminder<=omanISO();
+  const ageDays=validDay(receivedRaw)?calendarAge(receivedRaw):null;
   return {id:issue.number,issue,kind:mail?"mail":"topic",number,title,rawStatus,waiting,status,receivedRaw,received,due,
     overdue:issue.state==="open"&&due&&due<today(),transferred:get(body,["تاريخ التحويل","تاريخ تحويل الموضوع للمديرية المختصة"]),
     directorate:get(body,["المديرية المختصة"]),assignee:get(body,["الموظف المسؤول"]),
     details:get(body,["تفاصيل الموضوع","تفاصيل الرسالة","تفاصيلها"]),
     notes:get(body,["الملاحظات","الملاحظات وآخر التحديثات"]),updates:get(body,["آخر التحديثات"]),
     direction:get(body,["التوجيه"]),updatedAt:new Date(issue.updated_at),
+    ageDays,followupStamp,followupBase,nextReminder,reminderDueNow,
     source:(body.match(/^>\s*مستورد من ملف المتابعة[^\n]*/m)||[""])[0]};
 }
 async function api(method,path,body){
@@ -88,7 +125,7 @@ function render(){
   $("logoutButton").hidden=!connected;
   const t=topics(),m=mails(),late=t.filter(x=>x.overdue),done=t.filter(x=>x.status==="منتهي");
   const snapshots=connected?[t.length,m.length,late.length,done.length]:[116,6,0,88];
-  for(const [id,val] of [["countTopics",snapshots[0]],["countMails",snapshots[1]],["countOverdue",snapshots[2]],["countClosed",snapshots[3]],["nav-topics",snapshots[0]],["nav-overdue",snapshots[2]],["nav-mails",snapshots[1]]])$(id).textContent=val.toLocaleString("ar-OM");
+  for(const [id,val] of [["countTopics",snapshots[0]],["countMails",snapshots[1]],["countOverdue",snapshots[2]],["countClosed",snapshots[3]],["nav-topics",snapshots[0]],["nav-overdue",snapshots[2]],["nav-mails",snapshots[1]],["nav-reminders",t.filter(x=>x.reminderDueNow).length]])$(id).textContent=val.toLocaleString("ar-OM");
   $("lastSync").textContent=lastSync?"آخر مزامنة "+fmTime(lastSync)+" · تحديث تلقائي كل دقيقة":"لم تُحمّل البيانات بعد";
   $("dateToday").textContent=fmDate(new Date());
   const selected=$("directorateFilter").value;
