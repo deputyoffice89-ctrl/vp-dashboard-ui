@@ -124,8 +124,8 @@ function render(){
   $("connectButton").hidden=connected;
   $("logoutButton").hidden=!connected;
   const t=topics(),m=mails(),late=t.filter(x=>x.overdue),done=t.filter(x=>x.status==="منتهي");
-  const snapshots=connected?[t.length,m.length,late.length,done.length]:[116,6,0,88];
-  for(const [id,val] of [["countTopics",snapshots[0]],["countMails",snapshots[1]],["countOverdue",snapshots[2]],["countClosed",snapshots[3]],["nav-topics",snapshots[0]],["nav-overdue",snapshots[2]],["nav-mails",snapshots[1]],["nav-reminders",t.filter(x=>x.reminderDueNow).length]])$(id).textContent=val.toLocaleString("ar-OM");
+  const snapshots=connected?[t.length,m.length,late.length,done.length]:[null,null,null,null];
+  for(const [id,val] of [["countTopics",snapshots[0]],["countMails",snapshots[1]],["countOverdue",snapshots[2]],["countClosed",snapshots[3]],["nav-topics",snapshots[0]],["nav-overdue",snapshots[2]],["nav-mails",snapshots[1]],["nav-reminders",t.filter(x=>x.reminderDueNow).length]])$(id).textContent=connected?val.toLocaleString("ar-OM"):"—";
   $("lastSync").textContent=lastSync?"آخر مزامنة "+fmTime(lastSync)+" · تحديث تلقائي كل دقيقة":"لم تُحمّل البيانات بعد";
   $("dateToday").textContent=fmDate(new Date());
   const selected=$("directorateFilter").value;
