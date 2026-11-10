@@ -45,6 +45,7 @@
       view.setUint16(4, 20, true);
       view.setUint16(6, 0x0800, true);
       view.setUint16(8, 0, true);
+      view.setUint16(12, 33, true); // Valid DOS ZIP date: 1980-01-01
       view.setUint32(14, crc, true);
       view.setUint32(18, data.length, true);
       view.setUint32(22, data.length, true);
@@ -58,6 +59,7 @@
       cv.setUint16(6, 20, true);
       cv.setUint16(8, 0x0800, true);
       cv.setUint16(10, 0, true);
+      cv.setUint16(14, 33, true);
       cv.setUint32(16, crc, true);
       cv.setUint32(20, data.length, true);
       cv.setUint32(24, data.length, true);
@@ -124,13 +126,14 @@
     return xmlHead + '<styleSheet xmlns="' + MAIN + '">' +
       '<fonts count="2"><font><sz val="11"/><name val="Arial"/></font>' +
       '<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Arial"/></font></fonts>' +
-      '<fills count="2"><fill><patternFill patternType="none"/></fill>' +
+      '<fills count="3"><fill><patternFill patternType="none"/></fill>' +
+      '<fill><patternFill patternType="gray125"/></fill>' +
       '<fill><patternFill patternType="solid"><fgColor rgb="FF12473E"/>' +
       '<bgColor indexed="64"/></patternFill></fill></fills>' +
       '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
       '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
       '<cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
-      '<xf numFmtId="0" fontId="1" fillId="1" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1">' +
+      '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1">' +
       '<alignment horizontal="right" vertical="center" readingOrder="2"/></xf>' +
       '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1">' +
       '<alignment horizontal="right" vertical="top" readingOrder="2" wrapText="1"/></xf></cellXfs>' +
