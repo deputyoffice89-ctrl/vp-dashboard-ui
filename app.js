@@ -4,7 +4,11 @@
 "use strict";
 const OWNER="deputyoffice89-ctrl",REPO="vp-office-dashboard",API="https://api.github.com/repos/"+OWNER+"/"+REPO;
 const DIRS=["الاشتراكات","المستحقات","إصابات العمل","خدمات المتعاملين","مكتب الدكتور"];
-const VIEWS={overview:"نظرة عامة",topics:"مواضيع مرسال",overdue:"المواضيع المتأخرة",mails:"البريد الإلكتروني",closed:"المواضيع المنجزة",reminders:"تذكيرات المتابعة",abdulrahman:"مواضيع عبدالرحمن",mohammad:"مواضيع محمد"};
+const VIEWS={overview:"نظرة عامة",topics:"مواضيع مرسال",overdue:"المواضيع المتأخرة",mails:"البريد الإلكتروني",closed:"المواضيع المنجزة",reminders:"تذكيرات المتابعة",abdulrahman:"مواضيع عبدالرحمن",mohammad:"مواضيع محمد",urgent:"المواضيع العاجلة",metrics:"المؤشرات الشهرية"};
+const CATEGORIES=["عادي","عاجل","مجلس الوزراء","أوامر سامية"];
+const priorityDays={"عادي":14,"عاجل":3,"مجلس الوزراء":2,"أوامر سامية":1};
+const bounded=(v,d)=>Number.isInteger(Number(v))&&Number(v)>=1&&Number(v)<=365?Number(v):d;
+const canonicalDir=v=>String(v||"").normalize("NFKC").replace(/[\u200b-\u200f\ufeff]/g,"").trim().replace(/^المديرية\s+(العامة\s+)?(ل|لـ|لل)\s*/,"").replace(/^مديرية\s+(العامة\s+)?/,"").trim();
 const $=id=>document.getElementById(id);
 let auth="",connected=false,issues=[],records=[],view="overview",editing=null,editorKind="topic",detail=null,lastSync=null,loading=false,filterDir="",refreshTimer=null;
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -38,7 +42,7 @@ function workingDaysBetween(start,end){
   return count;
 }
 function reminderTag(r){
-  if(r.status==="منتهي"||r.kind!=="topic")return '<span class="age-empty">—</span>';
+  if(r.status==="منتهي")return '<span class="age-empty">—</span>';
   if(r.reminderDueNow)return '<span class="reminder-pill due">تذكير مستحق</span>';
   return '<span class="reminder-pill">بعد '+workingDaysBetween(omanISO(),r.nextReminder)+' يوم عمل</span>';
 }
@@ -66,16 +70,30 @@ function decode(issue){
   const rawStatus=get(body,["الحالة","حالة الموضوع في الإكسل","حالة المتابعة","حالة الرسالة"]);
   const waiting=rawStatus.includes("انتظار مرئيات السيد")||rawStatus.includes("بانتظار");
   const status=issue.state==="closed"?"منتهي":waiting?"انتظار مرئيات السيد":"قيد الإجراء";
-  const receivedRaw=get(body,["تاريخ الوصول","تاريخ وصول الموضوع"]),received=iso(receivedRaw),due=add14(received);
+  const receivedRaw=get(body,["تاريخ الوصول","تاريخ وصول الموضوع"]),received=iso(receivedRaw);
+  const transferred=get(body,["تاريخ التحويل","تاريخ تحويل الموضوع للمديرية المختصة"]);
+  const explicitCategory=get(body,["التصنيف"]);
+  const category=CATEGORIES.includes(explicitCategory)?explicitCategory:/أوامر سامية|الأوامر السامية|أمر سامٍ|أمر سامي/.test(title.normalize("NFKC"))?"أوامر سامية":/مجلس الوزراء/.test(title.normalize("NFKC"))?"مجلس الوزراء":"عادي";
+  const deadlineDays=bounded(get(body,["مدة الإنجاز بالأيام"]),priorityDays[category]);
+  const due=received?new Date(received.getFullYear(),received.getMonth(),received.getDate()+deadlineDays):null;
+  const interval=bounded(get(body,["أيام المتابعة"]),3);
+  const directorUpdateDate=get(body,["تاريخ آخر تحديث من المديرية"]);
+  const directorUpdate=get(body,["آخر تحديث من المديرية"]);
+  const directorAge=validDay(directorUpdateDate)?calendarAge(directorUpdateDate):validDay(transferred)?calendarAge(transferred):null;
+  const sentAge=validDay(transferred)?calendarAge(transferred):null;
+  const attachments=get(body,["المرفقات"]);
+  const followupLog=get(body,["سجل المتابعات"]).split(",").filter(validDay);
+
   const followupStamp=get(body,["تاريخ آخر متابعة"]);
   const updateDay=omanISO(new Date(issue.updated_at||issue.created_at));
-  const followupBase=validDay(followupStamp)&&followupStamp>updateDay?followupStamp:updateDay;
-  const nextReminder=afterWorkDays(followupBase,3);
+  const followupBase=validDay(followupStamp)?followupStamp:validDay(transferred)?transferred:validDay(receivedRaw)?receivedRaw:omanISO(new Date(issue.created_at));
+  const nextReminder=afterWorkDays(followupBase,interval);
   const reminderDueNow=issue.state!=="closed"&&nextReminder<=omanISO();
   const ageDays=validDay(receivedRaw)?calendarAge(receivedRaw):null;
   return {id:issue.number,issue,kind:mail?"mail":"topic",number,title,rawStatus,waiting,status,receivedRaw,received,due,
-    overdue:issue.state==="open"&&due&&due<today(),transferred:get(body,["تاريخ التحويل","تاريخ تحويل الموضوع للمديرية المختصة"]),
-    directorate:get(body,["المديرية المختصة"]),assignee:get(body,["الموظف المسؤول"]),
+    overdue:issue.state==="open"&&((due&&due<today())||(directorAge!==null&&directorAge>deadlineDays)),transferred,
+    category,deadlineDays,interval,directorUpdateDate,directorUpdate,directorAge,sentAge,attachments,followupLog,
+    directorate:canonicalDir(get(body,["المديرية المختصة","المديرية","جميع المديريات"])),assignee:get(body,["الموظف المسؤول"]),
     details:get(body,["تفاصيل الموضوع","تفاصيل الرسالة","تفاصيلها"]),
     notes:get(body,["الملاحظات","الملاحظات وآخر التحديثات"]),updates:get(body,["آخر التحديثات"]),
     direction:get(body,["التوجيه"]),updatedAt:new Date(issue.updated_at),
@@ -94,13 +112,16 @@ async function reload(silent=false){
   if(!connected||loading)return;
   loading=true;$("syncButton").disabled=true;
   try{
-    const result=[];
+    const result=[],snapshots=[];
     for(let page=1;page<=20;page++){
       const batch=await api("GET","/issues?state=all&per_page=100&page="+page);
-      for(const issue of batch)if(!issue.pull_request&&(/^\[(موضوع|بريد)\]/.test(issue.title)))result.push(issue);
+      for(const issue of batch)if(!issue.pull_request){
+        if(/^\[(موضوع|بريد)\]/.test(issue.title))result.push(issue);
+        else if(issue.title.startsWith("[مؤشر شهري] ")){try{const v=JSON.parse(issue.body);if(Array.isArray(v.rows)&&v.month)snapshots.push(v)}catch{}}
+      }
       if(batch.length<100)break;
     }
-    issues=result;records=result.map(decode);lastSync=new Date();render();
+    monthlySnapshots=snapshots;issues=result;records=result.map(decode);lastSync=new Date();render();
     if(!silent)toast("تم تحديث البيانات من GitHub");
     return true;
   }catch(e){toast("تعذر التحديث: "+e.message,true);return false}
@@ -113,7 +134,7 @@ function changeView(next){
   view=next;
   $("breadcrumbCurrent").textContent=VIEWS[next];
   document.querySelectorAll(".nav-item").forEach(el=>el.classList.toggle("active",el.dataset.view===next));
-  $("overviewView").hidden=next!=="overview";$("listView").hidden=next==="overview";
+  $("overviewView").hidden=next!=="overview";$("listView").hidden=next==="overview"||next==="metrics";$("metricsView").hidden=next!=="metrics";
   $("sidebar").classList.remove("show");
   // A fresh page must not inherit a hidden department or employee filter.
   $("searchField").value="";
@@ -121,7 +142,7 @@ function changeView(next){
   $("directorateFilter").value="";
   $("employeeFilter").value="";
   filterDir="";
-  if(next==="overview")renderOverview();else renderList();
+  if(next==="overview")renderOverview();else if(next==="metrics")renderMetrics();else renderList();
 }
 function render(){
   $("connectionBanner").hidden=connected;
@@ -130,14 +151,14 @@ function render(){
   $("logoutButton").hidden=!connected;
   const t=topics(),m=mails(),late=t.filter(x=>x.overdue),done=t.filter(x=>x.status==="منتهي");
   const snapshots=connected?[t.length,m.length,late.length,done.length]:[null,null,null,null];
-  for(const [id,val] of [["countTopics",snapshots[0]],["countMails",snapshots[1]],["countOverdue",snapshots[2]],["countClosed",snapshots[3]],["nav-topics",snapshots[0]],["nav-overdue",snapshots[2]],["nav-mails",snapshots[1]],["nav-reminders",t.filter(x=>x.reminderDueNow).length],["nav-abdulrahman",t.filter(x=>(x.assignee||"").trim()==="عبدالرحمن").length],["nav-mohammad",t.filter(x=>(x.assignee||"").trim()==="محمد").length]])$(id).textContent=connected?val.toLocaleString("ar-OM"):"—";
+  for(const [id,val] of [["countTopics",snapshots[0]],["countMails",snapshots[1]],["countOverdue",snapshots[2]],["countClosed",snapshots[3]],["nav-topics",snapshots[0]],["nav-overdue",snapshots[2]],["nav-mails",snapshots[1]],["nav-reminders",records.filter(x=>x.reminderDueNow).length],["nav-urgent",records.filter(x=>x.category!=="عادي"&&x.status!=="منتهي").length],["nav-abdulrahman",t.filter(x=>(x.assignee||"").trim()==="عبدالرحمن").length],["nav-mohammad",t.filter(x=>(x.assignee||"").trim()==="محمد").length]])$(id).textContent=connected?val.toLocaleString("ar-OM"):"—";
   $("lastSync").textContent=lastSync?"آخر مزامنة "+fmTime(lastSync)+" · تحديث تلقائي كل دقيقة":"لم تُحمّل البيانات بعد";
   $("dateToday").textContent=fmDate(new Date());
   const selected=$("directorateFilter").value;
-  const dirs=[...new Set([...DIRS,...t.map(r=>r.directorate).filter(Boolean)])];
+  const dirs=[...new Set([...DIRS,...records.map(r=>r.directorate).filter(Boolean)])].filter(d=>d!=="غير محدد");
   $("directorateFilter").innerHTML='<option value="">جميع المديريات</option>'+dirs.map(d=>'<option value="'+esc(d)+'">'+esc(d)+'</option>').join("")+'<option value="غير محدد">غير محدد</option>';
   $("directorateFilter").value=filterDir||selected||"";
-  if(view==="overview")renderOverview();else renderList();
+  if(view==="overview")renderOverview();else if(view==="metrics")renderMetrics();else renderList();
 }
 function renderOverview(){
   const t=topics();
@@ -154,7 +175,7 @@ function renderOverview(){
   const all=t.filter(r=>r.status!=="منتهي").sort((a,b)=>Number(b.overdue)-Number(a.overdue)||(a.due?.getTime()||9999999999999)-(b.due?.getTime()||9999999999999)||a.id-b.id);
   $("priorityCount").textContent=t.filter(r=>r.overdue).length.toLocaleString("ar-OM")+" متأخرة";
   $("priorityList").innerHTML=connected?(all.length?all.slice(0,7).map(r=>'<button class="priority-item" type="button" data-open-id="'+r.id+'"><div class="priority-description"><strong>'+esc(r.title)+'</strong><small>'+esc(r.directorate||"مديرية غير محددة")+' · '+esc(r.assignee||"بدون مسؤول")+'</small></div><span class="priority-code">'+esc(r.number||"#"+r.id)+'</span>'+(r.overdue?'<span class="priority-badge">متأخر</span>':'')+'</button>').join(""):'<p class="empty-note">لا توجد مواضيع قيد الإجراء حالياً.</p>'):'<p class="empty-note">تظهر المواضيع التي تحتاج متابعة هنا.</p>';
-  const reminders=t.filter(r=>r.reminderDueNow).sort((a,b)=>a.nextReminder.localeCompare(b.nextReminder)||a.id-b.id);
+  const reminders=records.filter(r=>r.reminderDueNow).sort((a,b)=>a.nextReminder.localeCompare(b.nextReminder)||a.id-b.id);
   $("reminderCount").textContent=connected?reminders.length.toLocaleString("ar-OM")+" مستحق":"—";
   $("reminderItems").innerHTML=connected?(reminders.length?reminders.slice(0,9).map(r=>
     '<button class="reminder-card" type="button" data-open-id="'+r.id+'"><span class="reminder-badge">حان موعد المتابعة</span><span class="reminder-title">'+esc(r.title)+'</span><span class="reminder-meta">'+esc(r.number||"#"+r.id)+' · '+esc(r.assignee||"غير محدد")+' · موعد: '+esc(r.nextReminder)+'</span></button>').join(""):'<p class="empty-note">لا توجد تذكيرات مستحقة حالياً. ستظهر المواضيع المفتوحة بعد 3 أيام عمل دون تحديث.</p>'):'<p class="empty-note">تظهر تذكيرات المتابعة بعد تسجيل الدخول.</p>';
@@ -162,7 +183,8 @@ function renderOverview(){
   $("recentTopics").innerHTML=connected?(recent.length?recent.map(r=>'<button type="button" class="recent-item" data-open-id="'+r.id+'"><div class="recent-main"><strong>'+esc(r.title)+'</strong><small>'+esc(r.number||"#"+r.id)+' · '+esc(r.directorate||"غير محدد")+'</small></div>'+stat(r)+'</button>').join(""):'<p class="empty-note">لا توجد مواضيع.</p>'):'<p class="empty-note">تظهر المواضيع بعد ربط الحساب.</p>';
 }
 function renderList(){
-  let rows=view==="mails"?mails():topics();
+  let rows=view==="mails"?mails():["urgent","overdue","reminders"].includes(view)?records.slice():topics();
+  if(view==="urgent")rows=rows.filter(r=>r.category!=="عادي"&&r.status!=="منتهي");
   if(view==="overdue")rows=rows.filter(r=>r.overdue);
   if(view==="closed")rows=rows.filter(r=>r.status==="منتهي");
   if(view==="reminders")rows=rows.filter(r=>r.reminderDueNow);
@@ -173,34 +195,90 @@ function renderList(){
   if(staffPage)rows=rows.filter(r=>String(r.assignee||"").normalize("NFKC").replace(/[\u200b-\u200f\ufeff]/g,"").trim()===staffName);
   const q=$("searchField").value.trim().toLowerCase(),dir=$("directorateFilter").value||filterDir,emp=staffPage?"":$("employeeFilter").value,status=$("statusFilter").value;
   if(q)rows=rows.filter(r=>[r.number,r.title,r.details,r.notes,r.updates,r.assignee].join(" ").toLowerCase().includes(q));
-  if(dir&&view!=="mails")rows=rows.filter(r=>(r.directorate||"غير محدد")===dir);
+  if(dir)rows=rows.filter(r=>(r.directorate||"غير محدد")===dir);
   if(emp)rows=rows.filter(r=>r.assignee===emp);
   if(status)rows=rows.filter(r=>status==="متأخر"?r.overdue:r.status===status);
   rows.sort((a,b)=>view==="reminders"?a.nextReminder.localeCompare(b.nextReminder):Number(b.overdue)-Number(a.overdue)||b.updatedAt-a.updatedAt);
   $("listTitle").textContent=VIEWS[view];
-  $("listSubtitle").textContent=view==="overdue"?"التي تجاوزت 14 يوماً من تاريخ وصولها":view==="closed"?"المواضيع المنتهية والمؤرشفة":view==="mails"?"متابعة المراسلات والإجراءات":view==="reminders"?"مواضيع حان موعد متابعتها بعد ثلاثة أيام عمل بدون الجمعة والسبت":view==="abdulrahman"?"مواضيع مرسال المسندة إلى عبدالرحمن فقط":view==="mohammad"?"مواضيع مرسال المسندة إلى محمد فقط":"عرض وإدارة جميع المعاملات";
-  $("addMail").hidden=view!=="mails";$("directorateFilter").hidden=view==="mails";
+  $("listSubtitle").textContent=view==="urgent"?"المعاملات ذات الأولوية المفتوحة":view==="overdue"?"تجاوزت مدة الإنجاز أو مدة انتظار تحديث المديرية":view==="closed"?"المواضيع المنتهية والمؤرشفة":view==="mails"?"متابعة المراسلات والإجراءات":view==="reminders"?"مواضيع حان موعد متابعتها بعد ثلاثة أيام عمل بدون الجمعة والسبت":view==="abdulrahman"?"مواضيع مرسال المسندة إلى عبدالرحمن فقط":view==="mohammad"?"مواضيع مرسال المسندة إلى محمد فقط":"عرض وإدارة جميع المعاملات";
+  $("addMail").hidden=view!=="mails";$("directorateFilter").hidden=false;
   $("employeeFilter").hidden=view==="abdulrahman"||view==="mohammad";
   $("resultsCount").textContent=connected?"عدد النتائج: "+rows.length.toLocaleString("ar-OM"):"سجّل دخولك لعرض البيانات";
-  $("listHead").innerHTML=view==="mails"?
-    '<tr><th>رقم الرسالة</th><th>موضوع الرسالة</th><th>الموظف المسؤول</th><th>الحالة</th><th>آخر تعديل</th><th>الإجراء</th></tr>':
-    '<tr><th>رقم الموضوع</th><th>اسم الموضوع</th><th>المديرية</th><th>المسؤول</th><th>الحالة</th><th>عدد الأيام</th><th>تذكير المتابعة</th><th>الموعد النهائي</th><th>الإجراء</th></tr>';
-  const colCount=view==="mails"?6:9;
-  $("listBody").innerHTML=!connected?'<tr><td colspan="'+colCount+'" class="empty-table">سجّل دخولك لعرض البيانات.</td></tr>':
-    !rows.length?'<tr><td colspan="'+colCount+'" class="empty-table">لا توجد نتائج مطابقة.</td></tr>':
-    rows.map(r=>view==="mails"?
-      '<tr><td>'+esc(r.number||"—")+'</td><td><span class="row-title">'+esc(r.title)+'</span></td><td>'+esc(r.assignee||"—")+'</td><td>'+stat(r)+'</td><td>'+fmDate(r.updatedAt)+'</td><td><button class="row-action" type="button" data-open-id="'+r.id+'">فتح وتحديث</button></td></tr>':
-      '<tr><td>'+esc(r.number||"—")+'</td><td><span class="row-title">'+esc(r.title)+'</span></td><td>'+esc(r.directorate||"—")+'</td><td>'+esc(r.assignee||"—")+'</td><td>'+stat(r)+'</td><td>'+ageNum(r)+'</td><td>'+reminderTag(r)+'</td><td>'+fmDate(r.due)+'</td><td><button class="row-action" type="button" data-open-id="'+r.id+'">فتح وتحديث</button></td></tr>').join("");
+  const columns=["الرقم / الموضوع","المديرية / المسؤول","الحالة / التصنيف","الوصول / الإرسال","إجمالي أيام الإرسال","آخر تحديث من المديرية","أيام دون تحديث","متابعة المكتب","التفاصيل والتوجيه والملاحظات","المرفقات","الإجراء"];
+  $("listHead").innerHTML="<tr>"+columns.map(c=>"<th>"+esc(c)+"</th>").join("")+"</tr>";
+  const txt=v=>esc(v||"—");
+  const num=v=>v===null?"—":String(v);
+  $("listBody").innerHTML=!connected||!rows.length?'<tr><td colspan="11" class="empty-table">'+(connected?"لا توجد نتائج مطابقة.":"سجّل دخولك لعرض البيانات.")+'</td></tr>':rows.map(r=>
+  '<tr class="'+(r.category!=="عادي"?"priority-row ":"")+(r.overdue?"overdue-row":"")+'"><td><small>'+txt(r.number)+' · '+(r.kind==="mail"?"بريد":"مرسال")+'</small><strong class="row-title">'+txt(r.title)+'</strong></td><td>'+txt(r.directorate)+'<small>'+txt(r.assignee)+'</small></td><td>'+stat(r)+'<small class="category-label">'+esc(r.category)+'</small><small>مدة الإنجاز: '+r.deadlineDays+' يوم</small></td><td>وصول: '+txt(r.receivedRaw)+'<small>إرسال: '+txt(r.transferred)+'</small></td><td class="numeric-cell">'+num(r.sentAge)+'</td><td>'+txt(r.directorUpdateDate)+'<div class="full-note">'+txt(r.directorUpdate)+'</div></td><td class="numeric-cell">'+num(r.directorAge)+(r.directorAge!==null&&!validDay(r.directorUpdateDate)?'<small>من الإرسال · لا تحديث مسجل</small>':'')+'</td><td>'+reminderTag(r)+'<small>كل '+r.interval+' أيام عمل</small><small>آخر متابعة: '+txt(r.followupStamp)+'</small></td><td class="wide-notes"><b>التفاصيل:</b> '+txt(r.details)+'<br><b>التوجيه:</b> '+txt(r.direction)+'<br><b>الملاحظات:</b> '+txt(r.notes)+'<br><b>التحديثات:</b> '+txt(r.updates)+'</td><td>'+attachmentLinks(r.attachments)+'</td><td><button class="row-action" data-open-id="'+r.id+'" type="button">تعديل / تحديث</button></td></tr>').join("");
+
 }
+function attachmentLinks(value){
+  return String(value||"").split(/\r?\n/).filter(Boolean).map(line=>{
+    const url=line.trim();return /^https:\/\//i.test(url)?'<a href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">فتح المرفق ↗</a>':esc(line);
+  }).join("<br>")||"—";
+}
+
+let monthlySnapshots=[];
+function monthStats(month){
+  const end=month===omanISO().slice(0,7)?omanISO():new Date(Date.UTC(Number(month.slice(0,4)),Number(month.slice(5,7)),0)).toISOString().slice(0,10);
+  const inMonth=d=>validDay(d)&&d.slice(0,7)===month;
+  const dirNames=[...new Set([...DIRS,...records.map(r=>r.directorate||"غير محدد")])];
+  const rows=[];
+  for(const dir of [...dirNames,"جميع المديريات"]){
+    for(const kind of ["topic","mail","all"]){
+      const group=records.filter(r=>(dir==="جميع المديريات"||(r.directorate||"غير محدد")===dir)&&(kind==="all"||r.kind===kind));
+      const received=group.filter(r=>inMonth(r.receivedRaw));
+      const completed=received.filter(r=>r.issue.closed_at&&omanISO(new Date(r.issue.closed_at))<=end&&r.status==="منتهي");
+      const open=received.filter(r=>!completed.includes(r));
+      const late=open.filter(r=>r.due&&omanISO(r.due)<end);
+      rows.push({dir,kind,received:received.length,completed:completed.length,open:open.length,late:late.length,sent:group.filter(r=>inMonth(r.transferred)).length,followups:group.reduce((n,r)=>n+r.followupLog.filter(inMonth).length,0),unknown:group.filter(r=>!validDay(r.receivedRaw)).length});
+    }
+  }
+  return {month,end,rows,savedAt:omanISO()};
+}
+function renderMetrics(){
+  const month=$("metricMonth").value||omanISO().slice(0,7);
+  $("metricMonth").value=month;
+  const dir=$("metricDirectorate").value;
+  const saved=monthlySnapshots.find(s=>s.month===month);
+  const data=saved||monthStats(month);
+  const names=[...new Set(data.rows.map(r=>r.dir))];
+  $("metricDirectorate").innerHTML='<option value="">كل مديرية على حدة</option>'+names.map(n=>'<option value="'+esc(n)+'">'+esc(n)+'</option>').join("");
+  $("metricDirectorate").value=names.includes(dir)?dir:"";
+  $("metricsStatus").textContent=!connected?"سجل الدخول أولاً":saved?"حصر محفوظ بتاريخ "+saved.savedAt:"حصر محسوب من التواريخ المتوفرة · غير مثبت بعد";
+  $("saveMonth").disabled=!connected||!!saved||month>=omanISO().slice(0,7);
+  $("metricsBody").innerHTML=!connected?"":data.rows.filter(r=>dir?r.dir===dir:r.dir!=="جميع المديريات").map(r=>"<tr><td>"+esc(r.dir)+"</td><td>"+({topic:"مرسال",mail:"البريد",all:"مشترك"}[r.kind])+"</td>"+["received","completed","open","late","sent","followups","unknown"].map(k=>"<td>"+r[k]+"</td>").join("")+"</tr>").join("");
+  const office=data.rows.find(r=>r.dir==="جميع المديريات"&&r.kind==="all");
+  $("officeMetrics").innerHTML=!connected||!office?"": [["المستلمة",office.received],["المرسلة",office.sent],["المنجزة من وارد الشهر",office.completed],["المتابعات المسجلة",office.followups]].map(([k,v])=>'<div class="metric-card"><small>'+k+'</small><strong>'+v+'</strong></div>').join("");
+}
+async function saveMonthlySnapshot(){
+  if(!requireLogin())return;
+  const month=$("metricMonth").value;
+  if(!/^\d{4}-\d{2}$/.test(month)||month>=omanISO().slice(0,7)||monthlySnapshots.some(x=>x.month===month))return;
+  if(!confirm("تثبيت حصر شهر "+month+" في المستودع الخاص؟ لن يتغير مع الشهور التالية."))return;
+  try{
+    const snapshot=monthStats(month);
+    await api("POST","/issues",{title:"[مؤشر شهري] "+month,body:JSON.stringify(snapshot)});
+    await reload(true);toast("تم حفظ الحصر الشهري");
+  }catch(e){toast("تعذر حفظ الحصر: "+e.message,true)}
+}
+
 function requireLogin(){if(connected)return true;$("loginDialog").showModal();return false}
 function formField(f,value){
   const label=document.createElement("label");label.className="field-label"+(f.wide?" field-wide":"");label.append(document.createTextNode(f.label));
   let el;
   if(f.options){el=document.createElement("select");for(const opt of f.options){const o=document.createElement("option");o.value=opt;o.textContent=opt||"غير محدد";el.append(o)}}
   else if(f.textarea){el=document.createElement("textarea");el.rows=3}
-  else{el=document.createElement("input");el.type=f.date?"date":"text"}
+  else{el=document.createElement("input");el.type=f.date?"date":f.numeric?"number":"text";if(f.numeric){el.min=1;el.max=365;el.step=1}}
   el.name=f.name;el.id="field-"+f.name;el.required=!!f.required;el.value=value||"";el.placeholder=f.placeholder||"";label.append(el);return label;
 }
+const extraFields=[
+{name:"directorUpdateDate",label:"تاريخ آخر تحديث من المديرية",date:true},
+{name:"directorUpdate",label:"آخر تحديث من المديرية عن الموضوع",textarea:true,wide:true},
+{name:"category",label:"التصنيف",options:CATEGORIES},
+{name:"deadlineDays",label:"مدة الإنجاز (أيام تقويمية)",numeric:true},
+{name:"interval",label:"أيام المتابعة (أيام عمل)",numeric:true},
+{name:"attachments",label:"المرفقات (روابط داخلية، رابط بكل سطر)",textarea:true,wide:true}];
 const topicFields=[
 {name:"number",label:"رقم الموضوع",required:true,placeholder:"123/2026"},
 {name:"title",label:"اسم الموضوع",required:true},
@@ -226,11 +304,17 @@ function openEditor(kind,record=null){
   $("editorTitle").textContent=(record?"تعديل ":"إضافة ")+(kind==="mail"?"رسالة بريد":"موضوع");
   $("editorSubmit").textContent=record?"حفظ التعديلات":"حفظ وإضافة";
   $("editorFields").replaceChildren();
-  for(const f of kind==="mail"?mailFields:topicFields){
+  const base=kind==="mail"?[...mailFields,{name:"receivedRaw",label:"تاريخ الوصول",date:true},{name:"transferred",label:"تاريخ الإرسال",date:true},{name:"directorate",label:"المديرية المختصة",options:["",...DIRS]}]:topicFields;
+  for(const f of [...base,...extraFields]){
+    if(f.name==="directorate")f.options=[...new Set(["",...DIRS,...records.map(r=>r.directorate).filter(Boolean)])];
     let value=record?.[f.name]||"";
     if(f.name==="status")value=record?.status||"قيد الإجراء";
+    if(f.name==="interval")value=record?.interval||3;
+    if(f.name==="category")value=record?.category||"عادي";
+    if(f.name==="deadlineDays")value=record?.deadlineDays||14;
     $("editorFields").append(formField(f,value));
   }
+  $("field-category").onchange=()=>{$("field-deadlineDays").value=priorityDays[$("field-category").value]};
   $("editorDialog").showModal();
 }
 const boldLine=(k,v)=>"**"+k+"**: "+(String(v||"").trim()||"غير محدد");
@@ -242,7 +326,7 @@ function bodyFor(v,kind,record){
     lines.push(boldLine("رقم الموضوع",v.number),boldLine("اسم الموضوع",v.title),
       boldLine("الحالة",v.status),boldLine("تاريخ الوصول",v.receivedRaw),boldLine("تاريخ التحويل",v.transferred),
       boldLine("المديرية المختصة",v.directorate),boldLine("الموظف المسؤول",v.assignee),
-      ...(record?.followupStamp?[boldLine("تاريخ آخر متابعة",record.followupStamp)]:[]),
+
       "","### تفاصيل الموضوع",v.details||"—","","### التوجيه",v.direction||"—",
       "","### الملاحظات",v.notes||"—","","### آخر التحديثات",v.updates||"—");
   }else{
@@ -250,7 +334,9 @@ function bodyFor(v,kind,record){
       boldLine("الموظف المسؤول",v.assignee),"","### تفاصيل الرسالة",v.details||"—",
       "","### الملاحظات",v.notes||"—","","### آخر التحديثات",v.updates||"—");
   }
-  lines.push("","---","**لتوثيق تحديث جديد:** أضف تعليقاً على الموضوع.");
+  lines.push("","---",boldLine("التصنيف",v.category),boldLine("مدة الإنجاز بالأيام",bounded(v.deadlineDays,priorityDays[v.category]||14)),boldLine("أيام المتابعة",bounded(v.interval,3)),boldLine("تاريخ آخر تحديث من المديرية",v.directorUpdateDate),boldLine("تاريخ آخر متابعة",record?.followupStamp),boldLine("سجل المتابعات",record?.followupLog?.join(",")));
+  if(kind==="mail")lines.push(boldLine("تاريخ الوصول",v.receivedRaw),boldLine("تاريخ التحويل",v.transferred),boldLine("المديرية المختصة",v.directorate));
+  lines.push("","### آخر تحديث من المديرية",v.directorUpdate||"—","","### المرفقات",v.attachments||"—","","---","**لتوثيق تحديث جديد:** أضف تعليقاً على الموضوع.");
   return lines.join("\n");
 }
 async function saveEditor(e){
@@ -275,7 +361,7 @@ async function openDetail(id){
   const r=records.find(x=>x.id===Number(id));if(!r)return;detail=r;
   $("detailRef").textContent=(r.kind==="mail"?"رسالة بريد":"موضوع")+" #"+r.id;
   $("detailTitle").textContent=r.title;
-  $("markFollowup").hidden=r.kind!=="topic"||r.status==="منتهي";
+  $("markFollowup").hidden=r.status==="منتهي";
   $("detailMeta").innerHTML=[["الرقم",r.number||"—"],["المديرية",r.directorate||"—"],["المسؤول",r.assignee||"—"],["الحالة",r.overdue?"متأخر":r.status],["عدد الأيام",r.ageDays===null?"—":String(r.ageDays)],["موعد تذكير المتابعة",r.kind==="mail"||r.status==="منتهي"?"—":r.nextReminder],["الموعد النهائي",fmDate(r.due)]].map(([k,v])=>'<span class="detail-chip">'+esc(k)+": "+esc(v)+'</span>').join("");
   const sections=r.kind==="mail"?[["تفاصيل الرسالة",r.details],["الملاحظات",r.notes],["آخر التحديثات",r.updates]]:[["تفاصيل الموضوع",r.details],["التوجيه",r.direction],["الملاحظات",r.notes],["آخر التحديثات",r.updates]];
   $("detailBody").innerHTML=sections.map(([k,v])=>"<h3>"+esc(k)+"</h3><p>"+esc(v||"—")+"</p>").join("");
@@ -304,18 +390,22 @@ async function setFollowupDate(id){
   const stamp=omanISO();
   const oldBody=String(issue.body||"");
   const pattern=/^\*\*تاريخ آخر متابعة\*\*:[^\r\n]*/m;
-  const newBody=pattern.test(oldBody)?oldBody.replace(pattern,"**تاريخ آخر متابعة**: "+stamp):"**تاريخ آخر متابعة**: "+stamp+"\n\n"+oldBody;
+  let newBody=pattern.test(oldBody)?oldBody.replace(pattern,"**تاريخ آخر متابعة**: "+stamp):"**تاريخ آخر متابعة**: "+stamp+"\n\n"+oldBody;
+  const logPattern=/^\*\*سجل المتابعات\*\*:[^\r\n]*/m;
+  const history=get(oldBody,["سجل المتابعات"]).split(",").filter(validDay);
+  history.push(stamp);
+  newBody=logPattern.test(newBody)?newBody.replace(logPattern,"**سجل المتابعات**: "+history.join(",")):"**سجل المتابعات**: "+history.join(",")+"\n\n"+newBody;
   await api("PATCH","/issues/"+id,{body:newBody});
   return stamp;
 }
 async function markFollowupToday(){
-  if(!detail||detail.kind!=="topic"||detail.status==="منتهي")return;
+  if(!detail||detail.status==="منتهي")return;
   const btn=$("markFollowup");btn.disabled=true;
   try{
     await setFollowupDate(detail.id);
     $("detailDialog").close();
     await reload(true);
-    toast("تم تسجيل المتابعة، والتذكير القادم بعد 3 أيام عمل دون الجمعة والسبت");
+    toast("تم تسجيل المتابعة، والتذكير القادم حسب مدة المتابعة المحددة دون الجمعة والسبت");
   }catch(error){toast("تعذر تسجيل المتابعة: "+error.message,true)}
   finally{btn.disabled=false}
 }
@@ -329,11 +419,11 @@ async function saveComment(e){
     await api("POST","/issues/"+id+"/comments",{body:content});
     $("commentText").value="";
     let followupOk=true;
-    if(detail.kind==="topic"){
+    if(detail.status!=="منتهي"){
       try{await setFollowupDate(id)}catch(error){followupOk=false;toast("حُفظ التعليق، لكن لم يتم تحديث موعد التذكير: "+error.message,true)}
     }
     await loadComments(id);await reload(true);
-    if(followupOk)toast("تم حفظ التحديث، والتذكير القادم بعد 3 أيام عمل");
+    if(followupOk)toast("تم حفظ التحديث، وتم تجديد موعد التذكير");
   }
   catch(err){toast("تعذر حفظ التحديث: "+err.message,true)}
   finally{btn.disabled=false}
@@ -348,7 +438,7 @@ async function flipStatus(){
 function logoutDashboard(){
   if(!connected)return;
   if(!confirm("هل تريد تسجيل الخروج من شاشة المتابعة؟"))return;
-  auth="";connected=false;issues=[];records=[];lastSync=null;detail=null;
+  auth="";connected=false;issues=[];records=[];monthlySnapshots=[];lastSync=null;detail=null;
   $("githubToken").value="";clearInterval(refreshTimer);refreshTimer=null;
   for(const modal of document.querySelectorAll("dialog"))if(modal.open)modal.close();
   render();
@@ -363,8 +453,8 @@ function downloadDashboard(){
     return;
   }
   try{
-    const headings=["نوع السجل","الرقم","اسم الموضوع","المديرية المختصة","الموظف المسؤول","الحالة","عدد الأيام","موعد تذكير المتابعة","تاريخ الوصول","تاريخ التحويل","الموعد النهائي","تفاصيل الموضوع","التوجيه","الملاحظات","آخر التحديثات","آخر تعديل","رابط السجل"];
-    const toRow=r=>[
+    const headings=["التصنيف","مدة الإنجاز","أيام المتابعة","آخر تحديث من المديرية","تاريخ تحديث المديرية","أيام دون تحديث","أيام من الإرسال","المرفقات","نوع السجل","الرقم","اسم الموضوع","المديرية المختصة","الموظف المسؤول","الحالة","عدد الأيام","موعد تذكير المتابعة","تاريخ الوصول","تاريخ التحويل","الموعد النهائي","تفاصيل الموضوع","التوجيه","الملاحظات","آخر التحديثات","آخر تعديل","رابط السجل"];
+    const toRow=r=>[r.category,r.deadlineDays,r.interval,r.directorUpdate,r.directorUpdateDate,r.directorAge??"",r.sentAge??"",r.attachments,
       r.kind==="mail"?"بريد إلكتروني":"موضوع مرسال",
       r.number,r.title,r.directorate,r.assignee,r.overdue?"متأخر":r.status,
       r.ageDays===null?"":r.ageDays,
@@ -376,7 +466,7 @@ function downloadDashboard(){
     ];
     const topics=records.filter(r=>r.kind==="topic");
     const mails=records.filter(r=>r.kind==="mail");
-    const reminders=topics.filter(r=>r.reminderDueNow);
+    const reminders=records.filter(r=>r.reminderDueNow);
     const workbook=window.OfficeXLSX.createWorkbook([
       {name:"مواضيع مرسال",headers:headings,rows:topics.map(toRow)},
       {name:"البريد الإلكتروني",headers:headings,rows:mails.map(toRow)},
@@ -431,6 +521,9 @@ function events(){
     }catch(error){auth="";connected=false;issues=[];records=[];$("authError").textContent=error.message;render()}
     finally{btn.disabled=false}
   };
+  $("metricMonth").onchange=renderMetrics;
+  $("metricDirectorate").onchange=renderMetrics;
+  $("saveMonth").onclick=saveMonthlySnapshot;
   $("editorForm").onsubmit=saveEditor;
   $("commentForm").onsubmit=saveComment;
   $("toggleClose").onclick=flipStatus;
