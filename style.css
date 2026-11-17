@@ -43,3 +43,23 @@
 .side-nav .staff-nav-item .nav-ico{font-size:14px;color:#c9b47c}
 .side-nav .staff-nav-item.active{background:#ffffff24}
 @media(max-width:750px){.sidebar{overflow-y:auto}.side-nav .staff-nav-item{min-height:43px}}
+
+/* Expanded operational register and monthly indicators */
+.urgent-nav{background:#c9ad6322!important;color:#ffe4a2!important}
+#listBody td{vertical-align:top;white-space:normal;line-height:1.6}
+#listBody td small,#listBody .row-title{display:block;white-space:normal;overflow-wrap:anywhere;margin-top:5px}
+#listBody td:first-child{min-width:250px}
+#listBody td:nth-child(6){min-width:190px}
+#listBody td.wide-notes{min-width:330px;white-space:pre-wrap;overflow-wrap:anywhere}
+#listBody .full-note{white-space:pre-wrap;overflow-wrap:anywhere}
+#listBody .category-label{font-weight:800;color:#856333}
+#listBody .priority-row td{background:#f9f3e4}
+#listBody .overdue-row td:first-child{border-right:4px solid #a74e52}
+#listBody .numeric-cell{font-size:19px;font-weight:800;text-align:center;min-width:100px}
+#listBody .numeric-cell small{font-size:11px;font-weight:400}
+.office-panel{margin-top:20px}
+.office-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;margin:20px 0}
+.metric-card{border:1px solid #dce6df;border-radius:12px;padding:18px;background:#f3f6f1}
+.metric-card small{display:block;color:#56766a}.metric-card strong{font-size:32px;color:#12473e}
+#metricsView input[type=month]{padding:10px;border:1px solid #dce6df;border-radius:8px;background:white;color:#12473e}
+#metricsView td{white-space:normal}
