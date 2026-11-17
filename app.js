@@ -8,7 +8,13 @@ const VIEWS={overview:"نظرة عامة",topics:"مواضيع مرسال",overd
 const CATEGORIES=["عادي","عاجل","مجلس الوزراء","أوامر سامية"];
 const priorityDays={"عادي":14,"عاجل":3,"مجلس الوزراء":2,"أوامر سامية":1};
 const bounded=(v,d)=>Number.isInteger(Number(v))&&Number(v)>=1&&Number(v)<=365?Number(v):d;
-const canonicalDir=v=>String(v||"").normalize("NFKC").replace(/[\u200b-\u200f\ufeff]/g,"").trim().replace(/^المديرية\s+(العامة\s+)?(ل|لـ|لل)\s*/,"").replace(/^مديرية\s+(العامة\s+)?/,"").trim();
+const canonicalDir=v=>{
+  const raw=String(v||"").normalize("NFKC").replace(/[\u200b-\u200f\ufeff\u0640]/g,"").replace(/\s+/g," ").trim();
+  if(!raw||raw==="غير محدد")return "";
+  const key=x=>x.replace(/[أإآ]/g,"ا").replace(/\s+/g,"").replace(/^ال/,"");
+  const clean=raw.replace(/^(?:ال)?مديرية\s+(?:العامة\s+)?/,"").replace(/^ل(?:ل|ـ)?/,"");
+  return DIRS.find(d=>key(d)===key(raw)||key(d)===key(clean))||raw;
+};
 const $=id=>document.getElementById(id);
 let auth="",connected=false,issues=[],records=[],view="overview",editing=null,editorKind="topic",detail=null,lastSync=null,loading=false,filterDir="",refreshTimer=null;
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -75,7 +81,9 @@ function decode(issue){
   const explicitCategory=get(body,["التصنيف"]);
   const category=CATEGORIES.includes(explicitCategory)?explicitCategory:/أوامر سامية|الأوامر السامية|أمر سامٍ|أمر سامي/.test(title.normalize("NFKC"))?"أوامر سامية":/مجلس الوزراء/.test(title.normalize("NFKC"))?"مجلس الوزراء":"عادي";
   const deadlineDays=bounded(get(body,["مدة الإنجاز بالأيام"]),priorityDays[category]);
-  const due=received?new Date(received.getFullYear(),received.getMonth(),received.getDate()+deadlineDays):null;
+  const deadlineBase=iso(transferred)||received;
+  const due=deadlineBase?new Date(deadlineBase.getFullYear(),deadlineBase.getMonth(),deadlineBase.getDate()+deadlineDays):null;
+  const dueISO=due?[due.getFullYear(),String(due.getMonth()+1).padStart(2,"0"),String(due.getDate()).padStart(2,"0")].join("-"):"";
   const interval=bounded(get(body,["أيام المتابعة"]),3);
   const directorUpdateDate=get(body,["تاريخ آخر تحديث من المديرية"]);
   const directorUpdate=get(body,["آخر تحديث من المديرية"]);
@@ -85,13 +93,12 @@ function decode(issue){
   const followupLog=get(body,["سجل المتابعات"]).split(",").filter(validDay);
 
   const followupStamp=get(body,["تاريخ آخر متابعة"]);
-  const updateDay=omanISO(new Date(issue.updated_at||issue.created_at));
   const followupBase=validDay(followupStamp)?followupStamp:validDay(transferred)?transferred:validDay(receivedRaw)?receivedRaw:omanISO(new Date(issue.created_at));
   const nextReminder=afterWorkDays(followupBase,interval);
   const reminderDueNow=issue.state!=="closed"&&nextReminder<=omanISO();
   const ageDays=validDay(receivedRaw)?calendarAge(receivedRaw):null;
-  return {id:issue.number,issue,kind:mail?"mail":"topic",number,title,rawStatus,waiting,status,receivedRaw,received,due,
-    overdue:issue.state==="open"&&((due&&due<today())||(directorAge!==null&&directorAge>deadlineDays)),transferred,
+  return {id:issue.number,issue,kind:mail?"mail":"topic",number,title,rawStatus,waiting,status,receivedRaw,received,due,dueISO,
+    overdue:issue.state==="open"&&((dueISO&&dueISO<omanISO())||(directorAge!==null&&directorAge>deadlineDays)),transferred,
     category,deadlineDays,interval,directorUpdateDate,directorUpdate,directorAge,sentAge,attachments,followupLog,
     directorate:canonicalDir(get(body,["المديرية المختصة","المديرية","جميع المديريات"])),assignee:get(body,["الموظف المسؤول"]),
     details:get(body,["تفاصيل الموضوع","تفاصيل الرسالة","تفاصيلها"]),
@@ -149,7 +156,7 @@ function render(){
   $("connectLabel").textContent=connected?"الحساب متصل":"ربط الحساب";
   $("connectButton").hidden=connected;
   $("logoutButton").hidden=!connected;
-  const t=topics(),m=mails(),late=t.filter(x=>x.overdue),done=t.filter(x=>x.status==="منتهي");
+  const t=topics(),m=mails(),late=records.filter(x=>x.overdue),done=t.filter(x=>x.status==="منتهي");
   const snapshots=connected?[t.length,m.length,late.length,done.length]:[null,null,null,null];
   for(const [id,val] of [["countTopics",snapshots[0]],["countMails",snapshots[1]],["countOverdue",snapshots[2]],["countClosed",snapshots[3]],["nav-topics",snapshots[0]],["nav-overdue",snapshots[2]],["nav-mails",snapshots[1]],["nav-reminders",records.filter(x=>x.reminderDueNow).length],["nav-urgent",records.filter(x=>x.category!=="عادي"&&x.status!=="منتهي").length],["nav-abdulrahman",t.filter(x=>(x.assignee||"").trim()==="عبدالرحمن").length],["nav-mohammad",t.filter(x=>(x.assignee||"").trim()==="محمد").length]])$(id).textContent=connected?val.toLocaleString("ar-OM"):"—";
   $("lastSync").textContent=lastSync?"آخر مزامنة "+fmTime(lastSync)+" · تحديث تلقائي كل دقيقة":"لم تُحمّل البيانات بعد";
@@ -204,12 +211,12 @@ function renderList(){
   $("addMail").hidden=view!=="mails";$("directorateFilter").hidden=false;
   $("employeeFilter").hidden=view==="abdulrahman"||view==="mohammad";
   $("resultsCount").textContent=connected?"عدد النتائج: "+rows.length.toLocaleString("ar-OM"):"سجّل دخولك لعرض البيانات";
-  const columns=["الرقم / الموضوع","المديرية / المسؤول","الحالة / التصنيف","الوصول / الإرسال","إجمالي أيام الإرسال","آخر تحديث من المديرية","أيام دون تحديث","متابعة المكتب","التفاصيل والتوجيه والملاحظات","المرفقات","الإجراء"];
+  const columns=["الرقم / الموضوع","المديرية / المسؤول","الحالة / التصنيف","الوصول / الإرسال","إجمالي أيام الوصول / الإرسال","آخر تحديث من المديرية","أيام دون تحديث","متابعة المكتب","التفاصيل والتوجيه والملاحظات","المرفقات","الإجراء"];
   $("listHead").innerHTML="<tr>"+columns.map(c=>"<th>"+esc(c)+"</th>").join("")+"</tr>";
   const txt=v=>esc(v||"—");
   const num=v=>v===null?"—":String(v);
   $("listBody").innerHTML=!connected||!rows.length?'<tr><td colspan="11" class="empty-table">'+(connected?"لا توجد نتائج مطابقة.":"سجّل دخولك لعرض البيانات.")+'</td></tr>':rows.map(r=>
-  '<tr class="'+(r.category!=="عادي"?"priority-row ":"")+(r.overdue?"overdue-row":"")+'"><td><small>'+txt(r.number)+' · '+(r.kind==="mail"?"بريد":"مرسال")+'</small><strong class="row-title">'+txt(r.title)+'</strong></td><td>'+txt(r.directorate)+'<small>'+txt(r.assignee)+'</small></td><td>'+stat(r)+'<small class="category-label">'+esc(r.category)+'</small><small>مدة الإنجاز: '+r.deadlineDays+' يوم</small></td><td>وصول: '+txt(r.receivedRaw)+'<small>إرسال: '+txt(r.transferred)+'</small></td><td class="numeric-cell">'+num(r.sentAge)+'</td><td>'+txt(r.directorUpdateDate)+'<div class="full-note">'+txt(r.directorUpdate)+'</div></td><td class="numeric-cell">'+num(r.directorAge)+(r.directorAge!==null&&!validDay(r.directorUpdateDate)?'<small>من الإرسال · لا تحديث مسجل</small>':'')+'</td><td>'+reminderTag(r)+'<small>كل '+r.interval+' أيام عمل</small><small>آخر متابعة: '+txt(r.followupStamp)+'</small></td><td class="wide-notes"><b>التفاصيل:</b> '+txt(r.details)+'<br><b>التوجيه:</b> '+txt(r.direction)+'<br><b>الملاحظات:</b> '+txt(r.notes)+'<br><b>التحديثات:</b> '+txt(r.updates)+'</td><td>'+attachmentLinks(r.attachments)+'</td><td><button class="row-action" data-open-id="'+r.id+'" type="button">تعديل / تحديث</button></td></tr>').join("");
+  '<tr class="'+(r.category!=="عادي"?"priority-row ":"")+(r.overdue?"overdue-row":"")+'"><td><small>'+txt(r.number)+' · '+(r.kind==="mail"?"بريد":"مرسال")+'</small><strong class="row-title">'+txt(r.title)+'</strong></td><td>'+txt(r.directorate)+'<small>'+txt(r.assignee)+'</small></td><td>'+stat(r)+'<small class="category-label">'+esc(r.category)+'</small><small>مدة الإنجاز: '+r.deadlineDays+' يوم</small><small>الموعد النهائي: '+txt(r.dueISO)+'</small></td><td>وصول: '+txt(r.receivedRaw)+'<small>إرسال: '+txt(r.transferred)+'</small></td><td class="numeric-cell">'+num(r.sentAge)+'<small>من الوصول: '+num(r.ageDays)+'</small></td><td>'+txt(r.directorUpdateDate)+'<div class="full-note">'+txt(r.directorUpdate)+'</div></td><td class="numeric-cell">'+num(r.directorAge)+(r.directorAge!==null&&!validDay(r.directorUpdateDate)?'<small>من الإرسال · لا تحديث مسجل</small>':'')+'</td><td>'+reminderTag(r)+'<small>كل '+r.interval+' أيام عمل</small><small>آخر متابعة: '+txt(r.followupStamp)+'</small></td><td class="wide-notes"><b>التفاصيل:</b> '+txt(r.details)+'<br><b>التوجيه:</b> '+txt(r.direction)+'<br><b>الملاحظات:</b> '+txt(r.notes)+'<br><b>التحديثات:</b> '+txt(r.updates)+'</td><td>'+attachmentLinks(r.attachments)+'</td><td><button class="row-action" data-open-id="'+r.id+'" type="button">تعديل / تحديث</button></td></tr>').join("");
 
 }
 function attachmentLinks(value){
@@ -230,7 +237,7 @@ function monthStats(month){
       const received=group.filter(r=>inMonth(r.receivedRaw));
       const completed=received.filter(r=>r.issue.closed_at&&omanISO(new Date(r.issue.closed_at))<=end&&r.status==="منتهي");
       const open=received.filter(r=>!completed.includes(r));
-      const late=open.filter(r=>r.due&&omanISO(r.due)<end);
+      const late=open.filter(r=>r.dueISO&&r.dueISO<end);
       rows.push({dir,kind,received:received.length,completed:completed.length,open:open.length,late:late.length,sent:group.filter(r=>inMonth(r.transferred)).length,followups:group.reduce((n,r)=>n+r.followupLog.filter(inMonth).length,0),unknown:group.filter(r=>!validDay(r.receivedRaw)).length});
     }
   }
@@ -347,6 +354,8 @@ async function saveEditor(e){
     if(v.receivedRaw&&!iso(v.receivedRaw))throw Error("تاريخ الوصول غير صحيح");
     if(v.transferred&&!iso(v.transferred))throw Error("تاريخ التحويل غير صحيح");
     if(v.receivedRaw&&v.transferred&&v.transferred<v.receivedRaw)throw Error("تاريخ التحويل قبل تاريخ الوصول");
+    if(v.directorUpdateDate&&v.directorUpdateDate>omanISO())throw Error("تاريخ تحديث المديرية لا يمكن أن يكون مستقبلياً");
+    if(v.directorUpdateDate&&v.transferred&&v.directorUpdateDate<v.transferred)throw Error("تاريخ تحديث المديرية قبل تاريخ الإرسال");
     const title=editorKind==="mail"?"[بريد] "+(v.number?v.number+" — ":"")+v.title:"[موضوع] "+v.number+" — "+v.title;
     const body=bodyFor(v,editorKind,editing);
     if(editing)await api("PATCH","/issues/"+editing.id,{title,body,state:v.status==="منتهي"?"closed":"open"});
@@ -458,8 +467,8 @@ function downloadDashboard(){
       r.kind==="mail"?"بريد إلكتروني":"موضوع مرسال",
       r.number,r.title,r.directorate,r.assignee,r.overdue?"متأخر":r.status,
       r.ageDays===null?"":r.ageDays,
-      r.kind==="topic"&&r.status!=="منتهي"?r.nextReminder:"",
-      r.receivedRaw,r.transferred,r.due?r.due.toISOString().slice(0,10):"",
+      r.status!=="منتهي"?r.nextReminder:"",
+      r.receivedRaw,r.transferred,r.dueISO,
       r.details,r.direction,r.notes,r.updates,
       r.updatedAt?r.updatedAt.toISOString():"",
       r.issue.html_url
@@ -467,10 +476,15 @@ function downloadDashboard(){
     const topics=records.filter(r=>r.kind==="topic");
     const mails=records.filter(r=>r.kind==="mail");
     const reminders=records.filter(r=>r.reminderDueNow);
+    const history=[...monthlySnapshots].sort((a,b)=>a.month.localeCompare(b.month));
+    const current=monthStats(omanISO().slice(0,7));
+    const metricRows=[...history,current].flatMap(s=>s.rows.map(r=>[s.month,s===current?"جاري":"محفوظ",r.dir,({topic:"مرسال",mail:"البريد",all:"مشترك"}[r.kind]),r.received,r.completed,r.open,r.late,r.sent,r.followups,r.unknown]));
     const workbook=window.OfficeXLSX.createWorkbook([
       {name:"مواضيع مرسال",headers:headings,rows:topics.map(toRow)},
       {name:"البريد الإلكتروني",headers:headings,rows:mails.map(toRow)},
-      {name:"تذكيرات المتابعة",headers:headings,rows:reminders.map(toRow)}
+      {name:"تذكيرات المتابعة",headers:headings,rows:reminders.map(toRow)},
+      {name:"المواضيع العاجلة",headers:headings,rows:records.filter(r=>r.category!=="عادي"&&r.status!=="منتهي").map(toRow)},
+      {name:"المؤشرات الشهرية",headers:["الشهر","الحصر","المديرية","المصدر","المستلمة","المنجزة","قيد الإجراء","المتأخرة","المرسلة","المتابعات","بلا تاريخ وصول"],rows:metricRows}
     ]);
     const url=URL.createObjectURL(workbook);
     const link=document.createElement("a");
@@ -480,7 +494,7 @@ function downloadDashboard(){
     link.click();
     link.remove();
     setTimeout(()=>URL.revokeObjectURL(url),3000);
-    toast("تم تجهيز ملف Excel بصيغة XLSX ويضم "+records.length+" سجلاً في 3 صفحات");
+    toast("تم تجهيز ملف Excel بصيغة XLSX ويضم "+records.length+" سجلاً في 5 صفحات");
   }catch(error){
     toast("تعذر إنشاء ملف Excel: "+error.message,true);
   }
