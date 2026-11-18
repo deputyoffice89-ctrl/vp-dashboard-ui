@@ -7,9 +7,9 @@
   <meta name="theme-color" content="#123f37">
   <title>شاشة المتابعة الخاصة بمكتب نائب الرئيس</title>
   <meta name="description" content="شاشة متابعة المواضيع والمراسلات لمكتب نائب الرئيس">
-  <link rel="stylesheet" href="style.css?v=20261117-2">
+  <link rel="stylesheet" href="style.css?v=20261118-4">
   <script defer src="xlsx-export.js"></script>
-  <script defer src="app.js?v=20261118-3"></script>
+  <script defer src="app.js?v=20261118-4"></script>
 </head>
 <body>
 <div class="layout">
@@ -72,11 +72,17 @@
         </div>
       </section>
       <section id="metricsView" class="view-section" hidden>
-        <div class="surface"><div class="surface-heading"><div><h2>مؤشرات المديريات الشهرية</h2><p>مرسال · البريد · مؤشر مشترك</p></div></div>
-        <div class="filters-row"><label>الشهر <input id="metricMonth" type="month"></label><select id="metricDirectorate"><option value="">كل مديرية على حدة</option></select><button class="outline-btn" id="saveMonth" type="button">تثبيت حصر الشهر السابق</button></div>
-        <p id="metricsStatus" class="age-note"></p><p class="age-note">المستلمة: تاريخ الوصول خلال الشهر. المنجزة والقائمة: حالة وارد الشهر حتى نهاية الفترة وفق البيانات المتاحة. المتأخرة جزء من القائمة. المرسلة: تاريخ التحويل خلال الشهر. المتابعات: التسجيلات الفعلية منذ تفعيل السجل. التواريخ الناقصة لا تُحتسب كوارد شهري.</p>
-        <div class="table-scroll"><table><thead><tr><th>المديرية</th><th>المصدر</th><th>المستلمة</th><th>المنجزة</th><th>قيد الإجراء</th><th>المتأخرة</th><th>المرسلة</th><th>المتابعات</th><th>بلا تاريخ وصول (كل الفترات)</th></tr></thead><tbody id="metricsBody"></tbody></table></div></div>
-        <div class="surface office-panel"><div class="surface-heading"><div><h2>مؤشر أعمال مكتب نائب الرئيس</h2><p>إجمالي مرسال والبريد لجميع المديريات</p></div></div><div id="officeMetrics" class="office-metrics"></div></div>
+        <div class="mhero"><div><small>مكتب نائب الرئيس · الأداء المؤسسي</small><h2>لوحة المؤشرات الشهرية</h2><p>متابعة الإنجاز ومقارنة أداء المديريات</p></div><span class="mhero-icon" aria-hidden="true">▥</span></div>
+        <div class="surface mcontrols">
+          <div class="mfilter-grid"><label>الشهر<input id="metricMonth" type="month"></label><label>المديرية<select id="metricDirectorate"><option value="جميع المديريات">جميع المديريات</option></select></label><label>مصدر المعاملات<select id="metricSource"><option value="all">مشترك · مرسال والبريد</option><option value="topic">مرسال</option><option value="mail">البريد الإلكتروني</option></select></label><button class="outline-btn" id="saveMonth" type="button">تثبيت الحصر الشهري</button></div>
+          <p id="metricsStatus" class="mstatus" role="status"></p>
+        </div>
+        <div class="surface msection"><div class="surface-heading"><div><h2 id="metricSelectionTitle">جميع المديريات</h2><p id="metricSelectionSubtitle"></p></div><span class="micro-tag">المؤشرات التنفيذية</span></div><div id="metricKpis" class="mkpi-grid"></div>
+          <div class="mvisual-grid"><div class="mvisual"><h3>نسبة الإنجاز</h3><div class="mring-layout"><div id="metricRing" class="mring"><div><strong id="metricPercent">—</strong><small>نسبة الإنجاز</small></div></div><p id="metricRingCaption"></p></div></div><div class="mvisual"><h3>توزيع الوارد حسب المصدر</h3><p>مرسال والبريد للمديرية المختارة</p><div id="metricChannels"></div></div></div><p id="metricUnknown" class="age-note"></p>
+        </div>
+        <div class="surface msection"><div class="surface-heading"><div><h2>مقارنة أداء المديريات</h2><p id="metricCompareSubtitle"></p></div></div><div class="mlegend"><span><i class="m-done"></i>منجزة</span><span><i class="m-pending"></i>قيد الإجراء غير المتأخرة</span><span><i class="m-late"></i>متأخرة</span></div><div id="metricCompare"></div><p class="age-note">اضغط على اسم المديرية لعرض مؤشراتها التفصيلية. الأشرطة تمثل توزيع حالات الوارد لكل مديرية.</p></div>
+        <div class="surface msection office-panel"><div class="surface-heading"><div><h2>جهود مكتب نائب الرئيس</h2><p id="officeMetricSubtitle"></p></div></div><div id="officeMetrics" class="office-metrics"></div></div>
+        <div class="surface msection"><details><summary>عرض الجدول التفصيلي حسب المصدر</summary><div class="table-scroll"><table><thead><tr><th>المديرية</th><th>المصدر</th><th>المستلمة</th><th>المنجزة</th><th>قيد الإجراء</th><th>المتأخرة</th><th>المرسلة</th><th>المتابعات</th><th>بلا تاريخ وصول</th></tr></thead><tbody id="metricsBody"></tbody></table></div></details><p class="age-note">الوارد حسب تاريخ الوصول في الشهر؛ المنجزة والقائمة من وارد الشهر حتى نهاية الفترة وفق البيانات المتاحة. المتأخرة جزء من القائمة. المرسلة حسب تاريخ التحويل، والمتابعات حسب التسجيلات الفعلية. الحصر التاريخي غير المثبت تقديري وفق السجلات الحالية.</p></div>
       </section>
       <footer class="footer">شاشة المتابعة الخاصة بمكتب نائب الرئيس <span>·</span> حفظ مشترك داخل المستودع الخاص</footer>
     </main>
