@@ -244,19 +244,52 @@ function monthStats(month){
   return {month,end,rows,savedAt:omanISO()};
 }
 function renderMetrics(){
-  const month=$("metricMonth").value||omanISO().slice(0,7);
+  if(!$("metricSource"))return;
+  const now=omanISO().slice(0,7);
+  const month=$("metricMonth").value||now;
   $("metricMonth").value=month;
-  const dir=$("metricDirectorate").value;
+  $("metricMonth").max=now;
+  const priorDir=$("metricDirectorate").value||"جميع المديريات";
+  const source=$("metricSource").value||"all";
   const saved=monthlySnapshots.find(s=>s.month===month);
   const data=saved||monthStats(month);
   const names=[...new Set(data.rows.map(r=>r.dir))];
-  $("metricDirectorate").innerHTML='<option value="">كل مديرية على حدة</option>'+names.map(n=>'<option value="'+esc(n)+'">'+esc(n)+'</option>').join("");
-  $("metricDirectorate").value=names.includes(dir)?dir:"";
-  $("metricsStatus").textContent=!connected?"سجل الدخول أولاً":saved?"حصر محفوظ بتاريخ "+saved.savedAt:"حصر محسوب من التواريخ المتوفرة · غير مثبت بعد";
-  $("saveMonth").disabled=!connected||!!saved||month>=omanISO().slice(0,7);
-  $("metricsBody").innerHTML=!connected?"":data.rows.filter(r=>dir?r.dir===dir:r.dir!=="جميع المديريات").map(r=>"<tr><td>"+esc(r.dir)+"</td><td>"+({topic:"مرسال",mail:"البريد",all:"مشترك"}[r.kind])+"</td>"+["received","completed","open","late","sent","followups","unknown"].map(k=>"<td>"+r[k]+"</td>").join("")+"</tr>").join("");
-  const office=data.rows.find(r=>r.dir==="جميع المديريات"&&r.kind==="all");
-  $("officeMetrics").innerHTML=!connected||!office?"": [["المستلمة",office.received],["المرسلة",office.sent],["المنجزة من وارد الشهر",office.completed],["المتابعات المسجلة",office.followups]].map(([k,v])=>'<div class="metric-card"><small>'+k+'</small><strong>'+v+'</strong></div>').join("");
+  const dir=names.includes(priorDir)?priorDir:"جميع المديريات";
+  $("metricDirectorate").innerHTML=["جميع المديريات",...names.filter(n=>n!=="جميع المديريات")].map(n=>'<option value="'+esc(n)+'">'+esc(n)+'</option>').join("");
+  $("metricDirectorate").value=dir;
+  $("metricsStatus").textContent=!connected?"سجّل الدخول لعرض المؤشرات":saved?"حصر محفوظ بتاريخ "+saved.savedAt:month===now?"الشهر الجاري · تحديث مباشر":"حصر تاريخي محسوب من التواريخ المتوفرة · غير مثبت بعد";
+  $("saveMonth").disabled=!connected||!!saved||month>=now;
+  const sourceName=({all:"مرسال والبريد",topic:"مرسال",mail:"البريد الإلكتروني"})[source]||"مرسال والبريد";
+  const val=(v)=>Math.max(0,Number(v)||0);
+  const fmt=v=>v===null?"—":val(v).toLocaleString("en-US");
+  const row=data.rows.find(r=>r.dir===dir&&r.kind===source);
+  const count=(key)=>connected&&row?val(row[key]):null;
+  const pct=(r)=>r&&val(r.received)>0?Math.round(100*val(r.completed)/val(r.received)):null;
+  $("metricSelectionTitle").textContent=dir;
+  $("metricSelectionSubtitle").textContent=sourceName+" · "+month;
+  const cards=[["المعاملات المستلمة","↙","received","received"],["المعاملات المنجزة","✓","completed","done"],["قيد الإجراء (تشمل المتأخرة)","◷","open","pending"],["المعاملات المتأخرة","!","late","late"]];
+  $("metricKpis").innerHTML=cards.map(([label,icon,key,cls])=>'<div class="mkpi '+cls+'"><span class="mkpi-icon" aria-hidden="true">'+icon+'</span><span class="mkpi-label">'+label+'</span><strong>'+fmt(count(key))+'</strong></div>').join("");
+  const p=connected?pct(row):null;
+  $("metricRing").style.setProperty("--completion",(p===null?0:Math.min(100,p))+"%");
+  $("metricPercent").textContent=p===null?"—":p+"%";
+  $("metricRingCaption").textContent=!connected?"البيانات بعد تسجيل الدخول":p===null?"لا يوجد وارد مؤرخ في الفترة":"أُنجز "+fmt(row.completed)+" من "+fmt(row.received)+" معاملة";
+  const channelRows=["topic","mail"].map(kind=>data.rows.find(r=>r.dir===dir&&r.kind===kind));
+  const total=channelRows.reduce((n,r)=>n+val(r?.received),0);
+  $("metricChannels").innerHTML=channelRows.map((r,i)=>{
+    const n=val(r?.received),share=total?100*n/total:0;
+    return '<div class="mchannel"><div><span>'+(i===0?"مرسال":"البريد الإلكتروني")+'</span><strong>'+fmt(connected?n:null)+'</strong></div><div class="mtrack"><span class="'+(i===0?"channel-topic":"channel-mail")+'" style="width:'+share+'%"></span></div></div>';
+  }).join("");
+  $("metricCompareSubtitle").textContent=sourceName+" · "+month+" · مقارنة نسبة الإنجاز";
+  $("metricCompare").innerHTML=!connected?'<p class="empty-note">سجّل الدخول لعرض مقارنة المديريات.</p>':
+    data.rows.filter(r=>r.kind===source&&r.dir!=="جميع المديريات").map(r=>{
+      const n=val(r.received),d=Math.min(n,val(r.completed)),l=Math.min(n-d,val(r.late)),o=Math.max(0,n-d-l),rate=pct(r);
+      return '<button type="button" class="mcompare-row'+(dir===r.dir?" selected":"")+'" data-metric-dir="'+esc(r.dir)+'"><div class="mcompare-top"><strong>'+esc(r.dir)+'</strong><span>'+ (rate===null?"لا يوجد وارد":rate+"% إنجاز")+'</span></div><div class="mstack">'+(n?'<span class="m-done" style="width:'+100*d/n+'%"></span><span class="m-pending" style="width:'+100*o/n+'%"></span><span class="m-late" style="width:'+100*l/n+'%"></span>':'')+'</div><div class="mcompare-bottom"><span>الوارد <b>'+n+'</b></span><span>المنجز <b>'+d+'</b></span><span>قيد الإجراء <b>'+o+'</b></span><span>المتأخر <b>'+l+'</b></span></div></button>';
+    }).join("");
+  const office=data.rows.find(r=>r.dir==="جميع المديريات"&&r.kind===source);
+  $("officeMetricSubtitle").textContent=sourceName+" · "+month+" · جميع المديريات";
+  $("officeMetrics").innerHTML=[["المعاملات المستلمة","↙","received"],["المعاملات المرسلة","↗","sent"],["المنجزة من وارد الشهر","✓","completed"],["المتابعات والتذكيرات المسجلة","↻","followups"]].map(([k,i,field])=>'<div class="office-kpi"><span aria-hidden="true">'+i+'</span><small>'+k+'</small><strong>'+fmt(connected&&office?office[field]:null)+'</strong></div>').join("");
+  $("metricUnknown").textContent=!connected||!row?"":val(row.unknown)>0?"تنبيه جودة البيانات: "+fmt(row.unknown)+" سجل بلا تاريخ وصول (من جميع الفترات ضمن الاختيار)، غير محتسب ضمن الوارد الشهري.":"لا توجد سجلات بلا تاريخ وصول ضمن الاختيار.";
+  $("metricsBody").innerHTML=!connected?"":data.rows.filter(r=>r.dir===dir).map(r=>"<tr><td>"+esc(r.dir)+"</td><td>"+({topic:"مرسال",mail:"البريد",all:"مشترك"}[r.kind])+"</td>"+["received","completed","open","late","sent","followups","unknown"].map(k=>"<td>"+fmt(r[k])+"</td>").join("")+"</tr>").join("");
 }
 async function saveMonthlySnapshot(){
   if(!requireLogin())return;
@@ -537,6 +570,8 @@ function events(){
   };
   $("metricMonth").onchange=renderMetrics;
   $("metricDirectorate").onchange=renderMetrics;
+  if($("metricSource"))$("metricSource").onchange=renderMetrics;
+  if($("metricCompare"))$("metricCompare").addEventListener("click",e=>{const row=e.target.closest("[data-metric-dir]");if(row){$("metricDirectorate").value=row.dataset.metricDir;renderMetrics()}});
   $("saveMonth").onclick=saveMonthlySnapshot;
   $("editorForm").onsubmit=saveEditor;
   $("commentForm").onsubmit=saveComment;
